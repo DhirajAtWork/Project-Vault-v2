@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
+import RoleSelectionModal from './RoleSelectionModal';
 import { getCurrentUserApi } from '../../api/authApi';
 
 /**
@@ -8,8 +9,10 @@ import { getCurrentUserApi } from '../../api/authApi';
  */
 const DashboardLayout = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [roleModalDismissed, setRoleModalDismissed] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -47,6 +50,22 @@ const DashboardLayout = () => {
 
   const currentRole = user?.accountType === 'recruiter' ? 'recruiter' : 'student';
 
+  const isRolePromptOpen = Boolean(
+    !roleModalDismissed &&
+    user &&
+    (user.roleSelected === false || location.search.includes('onboarding=select-role'))
+  );
+
+  const handleRoleSelected = (updatedUser) => {
+    setUser(updatedUser);
+    setRoleModalDismissed(true);
+    const userRole = updatedUser.accountType === 'recruiter' ? 'recruiter' : 'student';
+    localStorage.setItem('vault_role', userRole);
+    if (location.search.includes('onboarding=select-role')) {
+      navigate(location.pathname, { replace: true });
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f7f7f2] bg-grid-pattern flex items-center justify-center font-sans">
@@ -64,6 +83,13 @@ const DashboardLayout = () => {
     <div className={`min-h-screen bg-[#f7f7f2] bg-grid-pattern text-slate-900 font-sans flex flex-col md:flex-row antialiased ${
       currentRole === 'recruiter' ? 'selection:bg-purple-100 selection:text-purple-900' : 'selection:bg-emerald-100 selection:text-emerald-900'
     } print:bg-white print:p-0 print:m-0`}>
+      {/* Role Selection Onboarding Modal for OAuth / Unconfirmed accounts */}
+      <RoleSelectionModal
+        isOpen={isRolePromptOpen}
+        user={user}
+        onRoleSelected={handleRoleSelected}
+      />
+
       {/* Mobile Top Header Navigation */}
       <div className="print:hidden">
         <Sidebar user={user} isMobile={true} />

@@ -98,6 +98,7 @@ export const registerUser = async (req, res) => {
       name,
       email: normalizedEmail,
       accountType: targetRole,
+      roleSelected: true,
       password,
       subscribeNewsletter: Boolean(subscribeNewsletter),
       otp: hashedOtp,
@@ -457,6 +458,7 @@ export const googleAuth = async (req, res) => {
         googleId,
         avatar: avatar || '',
         accountType: accountType || 'student',
+        roleSelected: Boolean(accountType),
         isEmailVerified: true,
       });
     }
@@ -505,6 +507,7 @@ export const githubAuth = async (req, res) => {
         githubId,
         avatar: avatar || '',
         accountType: accountType || 'student',
+        roleSelected: Boolean(accountType),
         isEmailVerified: true,
       });
     }
@@ -542,7 +545,10 @@ export const passportOAuthSuccess = (req, res) => {
   };
 
   res.cookie('token', token, cookieOptions);
-  return res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard`);
+  const redirectTarget = req.user.roleSelected === false
+    ? `${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard?onboarding=select-role`
+    : `${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard`;
+  return res.redirect(redirectTarget);
 };
 
 /**
@@ -624,7 +630,11 @@ export const updateUserProfile = async (req, res) => {
     } = req.body;
 
     if (name !== undefined) user.name = name;
-    if (accountType !== undefined) user.accountType = accountType;
+    if (accountType !== undefined && ['student', 'recruiter'].includes(accountType)) {
+      user.accountType = accountType;
+      user.roleSelected = true;
+      user.roleChangesCount = (user.roleChangesCount || 0) + 1;
+    }
     if (subscribeNewsletter !== undefined) user.subscribeNewsletter = Boolean(subscribeNewsletter);
     if (avatar !== undefined) user.avatar = avatar;
     if (headline !== undefined) user.headline = headline;
@@ -951,5 +961,68 @@ export const verifyEmailChange = async (req, res) => {
     });
   }
 };
+
+/**
+ * @desc    Update Account Type / Role (Student or Recruiter)
+ * @route   PUT /api/auth/account-type
+ * @access  Private
+ */
+export const updateAccountType = async (req, res) => {
+  try {
+    const { accountType } = req.body;
+
+    if (!accountType || !['student', 'recruiter'].includes(accountType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid account type. Please select either "student" or "recruiter".',
+      });
+    }
+
+    const userId = req.user?._id;
+    const user = await User.findById(userId);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User account not found',
+      });
+    }
+
+    user.accountType = accountType;
+    user.roleSelected = true;
+    user.roleChangesCount = (user.roleChangesCount || 0) + 1;
+    await user.save();
+
+    // Reissue JWT auth token with fresh payload
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRE || '7d',
+    });
+
+    const cookieOptions = {
+      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    };
+    res.cookie('token', token, cookieOptions);
+
+    const safeUser = removeSensitiveFields(user);
+
+    return res.status(200).json({
+      success: true,
+      message: `Account type successfully configured as ${accountType}`,
+      user: safeUser,
+      token,
+    });
+  } catch (error) {
+    console.error('Update Account Type Error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Server error while updating account type',
+      error: error.message,
+    });
+  }
+};
+
 
 

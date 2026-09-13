@@ -339,3 +339,29 @@ export const verifyEmailChangeApi = async (newEmail, otp) => {
   }
   return data;
 };
+
+/**
+ * Update user account type (student or recruiter)
+ */
+export const updateAccountTypeApi = async (accountType) => {
+  const response = await fetch(`${API_BASE_URL}/account-type`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+    body: JSON.stringify({ accountType }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to update account type');
+  }
+  if (data.token && typeof window !== 'undefined') {
+    localStorage.setItem('vault_token', data.token);
+  }
+  if (data.user && typeof window !== 'undefined') {
+    localStorage.setItem('user', JSON.stringify(data.user));
+    localStorage.setItem('vault_role', data.user.accountType);
+  }
+  return data;
+};
+

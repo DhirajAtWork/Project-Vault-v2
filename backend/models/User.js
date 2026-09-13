@@ -33,6 +33,14 @@ const userSchema = new mongoose.Schema(
       enum: ['student', 'recruiter', 'admin'],
       default: 'student',
     },
+    roleSelected: {
+      type: Boolean,
+      default: false,
+    },
+    roleChangesCount: {
+      type: Number,
+      default: 0,
+    },
     role: {
       type: String,
       enum: ['user', 'admin'],

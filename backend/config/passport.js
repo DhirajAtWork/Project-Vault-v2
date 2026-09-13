@@ -42,6 +42,7 @@ export const configurePassport = () => {
               googleId,
               avatar,
               accountType: 'student',
+              roleSelected: false,
             });
           }
 
@@ -118,6 +119,7 @@ export const configurePassport = () => {
               githubId,
               avatar,
               accountType: 'student',
+              roleSelected: false,
             });
           }
 

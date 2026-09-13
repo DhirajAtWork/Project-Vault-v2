@@ -144,7 +144,7 @@ export const sendWelcomeEmail = async (email, name) => {
           <div class="title">Welcome aboard, ${name}! 🎉</div>
           <p class="text">Your email address has been successfully verified. You are now officially a part of <strong>Project Vault v2</strong> - the premier verified student project showcase and developer ecosystem.</p>
           <p class="text">Log in to your dashboard to manage your verified portfolio projects, explore peer codebases, and connect with top recruiters.</p>
-          <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard" class="cta-btn">Access Your Dashboard →</a>
+          <a href="${process.env.CLIENT_URL || 'http://localhost:5000'}/dashboard" class="cta-btn">Access Your Dashboard →</a>
           <div class="footer">&copy; 2026 Project Vault v2 • Verified Student Showcase</div>
         </div>
       </body>
@@ -303,7 +303,7 @@ export const sendCollaborationInquiryEmail = async ({
           </div>
 
           <p class="text">Review this inquiry on your dashboard to accept the collaboration and connect with the recruiter.</p>
-          <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard/analytics" class="cta-btn">View Request & Connect &rarr;</a>
+          <a href="${process.env.CLIENT_URL || 'http://localhost:5000'}/dashboard/analytics" class="cta-btn">View Request & Connect &rarr;</a>
           
           <div class="footer">&copy; 2026 Project Vault v2 &bull; Talent & Collaboration Ecosystem</div>
         </div>
@@ -369,7 +369,7 @@ export const sendCollaborationAcceptedEmail = async ({
           </div>
 
           <p class="text">You can now proceed with direct outreach, schedule an introductory screening, or coordinate technical interviews.</p>
-          <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard/analytics" class="cta-btn">Open Recruiter Dashboard &rarr;</a>
+          <a href="${process.env.CLIENT_URL || 'http://localhost:5000'}/dashboard/analytics" class="cta-btn">Open Recruiter Dashboard &rarr;</a>
           
           <div class="footer">&copy; 2026 Project Vault v2 &bull; Verified Candidate Pipeline</div>
         </div>
@@ -428,7 +428,7 @@ export const sendProjectRemovedEmail = async ({
           </div>
 
           <p class="text">You can continue discovering other top verified student engineering projects and active candidates on the platform.</p>
-          <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard/visit-projects" class="cta-btn">Explore Verified Projects &rarr;</a>
+          <a href="${process.env.CLIENT_URL || 'http://localhost:5000'}/dashboard/visit-projects" class="cta-btn">Explore Verified Projects &rarr;</a>
           
           <div class="footer">&copy; 2026 Project Vault v2 &bull; Talent & Collaboration Ecosystem</div>
         </div>

@@ -55,7 +55,7 @@ router.post('/upload-media', protect, uploadSingleMedia, uploadMedia);
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'], session: false }));
 router.get(
   '/google/callback',
-  passport.authenticate('google', { failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:5173'}/signin?error=google_failed`, session: false }),
+  passport.authenticate('google', { failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:5000'}/signin?error=google_failed`, session: false }),
   passportOAuthSuccess
 );
 
@@ -65,7 +65,7 @@ router.get(
 router.get('/github', passport.authenticate('github', { scope: ['user:email'], session: false }));
 router.get(
   '/github/callback',
-  passport.authenticate('github', { failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:5173'}/signin?error=github_failed`, session: false }),
+  passport.authenticate('github', { failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:5000'}/signin?error=github_failed`, session: false }),
   passportOAuthSuccess
 );
 

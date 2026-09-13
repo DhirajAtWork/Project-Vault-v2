@@ -529,8 +529,10 @@ export const githubAuth = async (req, res) => {
  * @access  Public
  */
 export const passportOAuthSuccess = (req, res) => {
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:5000';
+
   if (!req.user) {
-    return res.redirect(`${process.env.CLIENT_URL || 'http://localhost:5173'}/signin?error=oauth_failed`);
+    return res.redirect(`${clientUrl}/signin?error=oauth_failed`);
   }
 
   const token = jwt.sign({ id: req.user._id }, process.env.JWT_SECRET, {
@@ -546,8 +548,8 @@ export const passportOAuthSuccess = (req, res) => {
 
   res.cookie('token', token, cookieOptions);
   const redirectTarget = req.user.roleSelected === false
-    ? `${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard?onboarding=select-role`
-    : `${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard`;
+    ? `${clientUrl}/dashboard?onboarding=select-role`
+    : `${clientUrl}/dashboard`;
   return res.redirect(redirectTarget);
 };
 

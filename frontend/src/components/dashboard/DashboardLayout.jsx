@@ -63,9 +63,18 @@ const DashboardLayout = () => {
 
   const currentRole = user?.accountType === 'recruiter' ? 'recruiter' : 'student';
 
+  const isOAuthUser = Boolean(
+    user?.isOAuthUser ||
+    user?.googleId ||
+    user?.githubId ||
+    user?.authProvider === 'github' ||
+    user?.authProvider === 'google'
+  );
+
   const isRolePromptOpen = Boolean(
     !roleModalDismissed &&
     user &&
+    isOAuthUser &&
     (user.roleSelected === false || location.search.includes('onboarding=select-role'))
   );
 

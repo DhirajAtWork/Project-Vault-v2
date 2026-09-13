@@ -52,6 +52,7 @@ const sendTokenResponse = (user, statusCode, res, message) => {
       subscribeNewsletter: user.subscribeNewsletter,
       avatar: user.avatar,
       isEmailVerified: user.isEmailVerified,
+      isOAuthUser: Boolean(user.isOAuthUser || user.googleId || user.githubId),
       googleId: user.googleId,
       githubId: user.githubId,
       createdAt: user.createdAt,
@@ -99,6 +100,7 @@ export const registerUser = async (req, res) => {
       email: normalizedEmail,
       accountType: targetRole,
       roleSelected: true,
+      isOAuthUser: false,
       password,
       subscribeNewsletter: Boolean(subscribeNewsletter),
       otp: hashedOtp,
@@ -459,6 +461,7 @@ export const googleAuth = async (req, res) => {
         avatar: avatar || '',
         accountType: accountType || 'student',
         roleSelected: Boolean(accountType),
+        isOAuthUser: true,
         isEmailVerified: true,
       });
     }
@@ -508,6 +511,7 @@ export const githubAuth = async (req, res) => {
         avatar: avatar || '',
         accountType: accountType || 'student',
         roleSelected: Boolean(accountType),
+        isOAuthUser: true,
         isEmailVerified: true,
       });
     }

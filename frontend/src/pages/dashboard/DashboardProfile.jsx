@@ -40,6 +40,13 @@ const DashboardProfile = () => {
   const { user, setUser } = useOutletContext() || {};
   const currentRole = user?.accountType === 'recruiter' ? 'recruiter' : 'student';
   const isRecruiter = currentRole === 'recruiter';
+  const isOAuthUser = Boolean(
+    user?.isOAuthUser ||
+    user?.googleId ||
+    user?.githubId ||
+    user?.authProvider === 'github' ||
+    user?.authProvider === 'google'
+  );
   const focusBorderClass = isRecruiter ? 'focus:border-purple-600' : 'focus:border-[#059669]';
 
   const fileInputRef = useRef(null);
@@ -546,19 +553,21 @@ const DashboardProfile = () => {
               } text-[10px] sm:text-xs font-bold px-2.5 py-0.5 rounded font-mono uppercase`}>
                 {formData.accountType}
               </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setRoleModalTarget(formData.accountType === 'recruiter' ? 'student' : 'recruiter');
-                  setRoleModalError('');
-                  setShowRoleModal(true);
-                }}
-                className="text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2 py-0.5 rounded-md flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95"
-                title="Switch your account type (Student or Recruiter)"
-              >
-                <RefreshCw className="w-3 h-3 text-slate-600" />
-                <span>Switch to {formData.accountType === 'recruiter' ? 'Student' : 'Recruiter'}</span>
-              </button>
+              {isOAuthUser && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRoleModalTarget(formData.accountType === 'recruiter' ? 'student' : 'recruiter');
+                    setRoleModalError('');
+                    setShowRoleModal(true);
+                  }}
+                  className="text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2 py-0.5 rounded-md flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95"
+                  title="Switch your account type (Student or Recruiter)"
+                >
+                  <RefreshCw className="w-3 h-3 text-slate-600" />
+                  <span>Switch to {formData.accountType === 'recruiter' ? 'Student' : 'Recruiter'}</span>
+                </button>
+              )}
             </div>
             <p className={`text-xs sm:text-sm font-semibold ${
               currentRole === 'recruiter' ? 'text-purple-700' : 'text-emerald-700'
@@ -567,26 +576,28 @@ const DashboardProfile = () => {
             </p>
             <p className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
               <span className="truncate font-mono font-medium">{formData.email}</span>
-              <button
-                type="button"
-                onClick={() => {
-                  setNewEmailInput('');
-                  setEmailOtpInput('');
-                  setEmailModalStep('input');
-                  setEmailModalError('');
-                  setEmailModalMsg('');
-                  setShowEmailModal(true);
-                }}
-                className={`text-[11px] font-bold ${
-                  currentRole === 'recruiter'
-                    ? 'text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-200'
-                    : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
-                } border px-2 py-0.5 rounded-md flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95`}
-                title="Edit and authenticate email address with OTP verification"
-              >
-                <Edit3 className="w-3 h-3" />
-                <span>Edit Email</span>
-              </button>
+              {isOAuthUser && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setNewEmailInput('');
+                    setEmailOtpInput('');
+                    setEmailModalStep('input');
+                    setEmailModalError('');
+                    setEmailModalMsg('');
+                    setShowEmailModal(true);
+                  }}
+                  className={`text-[11px] font-bold ${
+                    currentRole === 'recruiter'
+                      ? 'text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-200'
+                      : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
+                  } border px-2 py-0.5 rounded-md flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95`}
+                  title="Edit and authenticate email address with OTP verification"
+                >
+                  <Edit3 className="w-3 h-3" />
+                  <span>Edit Email</span>
+                </button>
+              )}
               {formData.location && <span>• {formData.location}</span>}
             </p>
           </div>

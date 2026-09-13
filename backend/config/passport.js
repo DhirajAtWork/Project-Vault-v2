@@ -34,6 +34,7 @@ export const configurePassport = () => {
             if (avatar && !user.avatar) {
               user.avatar = avatar;
             }
+            user.isOAuthUser = true;
             await user.save();
           } else {
             user = await User.create({
@@ -43,6 +44,7 @@ export const configurePassport = () => {
               avatar,
               accountType: 'student',
               roleSelected: false,
+              isOAuthUser: true,
             });
           }
 
@@ -111,6 +113,7 @@ export const configurePassport = () => {
             if (avatar && !user.avatar) {
               user.avatar = avatar;
             }
+            user.isOAuthUser = true;
             await user.save();
           } else {
             user = await User.create({
@@ -120,6 +123,7 @@ export const configurePassport = () => {
               avatar,
               accountType: 'student',
               roleSelected: false,
+              isOAuthUser: true,
             });
           }
 

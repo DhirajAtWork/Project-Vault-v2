@@ -12,7 +12,6 @@ const userSchema = new mongoose.Schema(
     email: {
       type: String,
       required: [true, 'Email address is required'],
-      unique: true,
       lowercase: true,
       trim: true,
       match: [
@@ -183,6 +182,9 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
   if (!this.password) return false;
   return await bcrypt.compare(enteredPassword, this.password);
 };
+
+// Compound unique index allowing the same email to register under different account roles
+userSchema.index({ email: 1, accountType: 1 }, { unique: true });
 
 const User = mongoose.model('User', userSchema);
 

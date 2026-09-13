@@ -64,6 +64,10 @@ export const validateLogin = [
   body('password')
     .notEmpty()
     .withMessage('Password is required'),
+  body('accountType')
+    .optional()
+    .isIn(['student', 'recruiter', 'admin'])
+    .withMessage('Account type must be student, recruiter or admin'),
   handleValidationErrors,
 ];
 
@@ -83,6 +87,10 @@ export const validateVerifyOtp = [
     .withMessage('OTP code is required')
     .isLength({ min: 6, max: 6 })
     .withMessage('OTP code must be exactly 6 digits'),
+  body('accountType')
+    .optional()
+    .isIn(['student', 'recruiter', 'admin'])
+    .withMessage('Account type must be student, recruiter or admin'),
   handleValidationErrors,
 ];
 
@@ -96,6 +104,10 @@ export const validateForgotPassword = [
     .withMessage('Please provide your registered email address')
     .isEmail()
     .withMessage('Please enter a valid email address'),
+  body('accountType')
+    .optional()
+    .isIn(['student', 'recruiter', 'admin'])
+    .withMessage('Account type must be student, recruiter or admin'),
   handleValidationErrors,
 ];
 

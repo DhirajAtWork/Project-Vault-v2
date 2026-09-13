@@ -79,7 +79,11 @@ const SignUpPage = () => {
 
     try {
       setLoading(true);
-      const res = await verifyOtpApi({ email: formData.email, otp: otpCode });
+      const res = await verifyOtpApi({ 
+        email: formData.email, 
+        otp: otpCode,
+        accountType: formData.accountType 
+      });
       setSuccessMsg(res.message || 'Email verified successfully! Redirecting to dashboard...');
       setTimeout(() => {
         navigate('/dashboard');
@@ -96,7 +100,10 @@ const SignUpPage = () => {
     setSuccessMsg('');
     try {
       setLoading(true);
-      const res = await resendOtpApi({ email: formData.email });
+      const res = await resendOtpApi({ 
+        email: formData.email,
+        accountType: formData.accountType 
+      });
       setSuccessMsg(res.message || 'New OTP verification code sent to your email.');
     } catch (err) {
       setErrorMsg(err.message || 'Failed to resend OTP');
@@ -310,7 +317,7 @@ const SignUpPage = () => {
                 required
                 value={formData.name}
                 onChange={handleChange}
-                placeholder="Aarav Sharma"
+                placeholder="John Doe"
                 className="w-full bg-[#f8fafc] border border-slate-300/80 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] transition-colors"
               />
             </div>
@@ -326,7 +333,7 @@ const SignUpPage = () => {
                 required
                 value={formData.email}
                 onChange={handleChange}
-                placeholder="aarav@iitd.ac.in"
+                placeholder="you@example.com"
                 className="w-full bg-[#f8fafc] border border-slate-300/80 rounded-xl px-4 py-2.5 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:border-[#059669] focus:ring-1 focus:ring-[#059669] transition-colors"
               />
             </div>

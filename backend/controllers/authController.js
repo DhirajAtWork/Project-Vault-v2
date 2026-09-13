@@ -74,11 +74,18 @@ export const registerUser = async (req, res) => {
       });
     }
 
-    const existingUser = await User.findOne({ email });
+    const normalizedEmail = email.toLowerCase().trim();
+    const targetRole = accountType || 'student';
+
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+      accountType: targetRole,
+    });
+
     if (existingUser) {
       return res.status(400).json({
         success: false,
-        message: 'An account with this email address already exists',
+        message: `An account with this email already exists as a ${targetRole}. Please sign in or select a different role.`,
       });
     }
 
@@ -88,8 +95,8 @@ export const registerUser = async (req, res) => {
 
     const user = await User.create({
       name,
-      email,
-      accountType: accountType || 'student',
+      email: normalizedEmail,
+      accountType: targetRole,
       password,
       subscribeNewsletter: Boolean(subscribeNewsletter),
       otp: hashedOtp,
@@ -123,7 +130,7 @@ export const registerUser = async (req, res) => {
  */
 export const verifyOTP = async (req, res) => {
   try {
-    const { email, otp } = req.body;
+    const { email, otp, accountType } = req.body;
 
     if (!email || !otp) {
       return res.status(400).json({
@@ -132,7 +139,13 @@ export const verifyOTP = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email }).select('+otp +otpExpires');
+    const normalizedEmail = email.toLowerCase().trim();
+    const query = { email: normalizedEmail };
+    if (accountType) {
+      query.accountType = accountType;
+    }
+
+    const user = await User.findOne(query).sort({ createdAt: -1 }).select('+otp +otpExpires');
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -186,7 +199,7 @@ export const verifyOTP = async (req, res) => {
  */
 export const resendOTP = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, accountType } = req.body;
     if (!email) {
       return res.status(400).json({
         success: false,
@@ -194,7 +207,13 @@ export const resendOTP = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email });
+    const normalizedEmail = email.toLowerCase().trim();
+    const query = { email: normalizedEmail };
+    if (accountType) {
+      query.accountType = accountType;
+    }
+
+    const user = await User.findOne(query).sort({ createdAt: -1 });
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -230,7 +249,7 @@ export const resendOTP = async (req, res) => {
  */
 export const forgotPassword = async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, accountType } = req.body;
     if (!email) {
       return res.status(400).json({
         success: false,
@@ -238,7 +257,13 @@ export const forgotPassword = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email });
+    const normalizedEmail = email.toLowerCase().trim();
+    const query = { email: normalizedEmail };
+    if (accountType) {
+      query.accountType = accountType;
+    }
+
+    const user = await User.findOne(query).sort({ createdAt: -1 });
     if (!user) {
       return res.status(404).json({
         success: false,
@@ -345,25 +370,49 @@ export const resetPassword = async (req, res) => {
  */
 export const loginUser = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, accountType } = req.body;
 
-    const user = await User.findOne({ email }).select('+password');
-    if (!user) {
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email address and password are required',
+      });
+    }
+
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const query = { email: normalizedEmail };
+    if (accountType) {
+      query.accountType = accountType;
+    }
+
+    const users = await User.find(query).select('+password');
+    if (users.length === 0) {
+      return res.status(401).json({
+        success: false,
+        message: accountType
+          ? `No ${accountType} account found with this email address`
+          : 'Invalid email address or password',
+      });
+    }
+
+    let matchedUser = null;
+    for (const u of users) {
+      const isMatch = await u.matchPassword(password);
+      if (isMatch) {
+        matchedUser = u;
+        break;
+      }
+    }
+
+    if (!matchedUser) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email address or password',
       });
     }
 
-    const isMatch = await user.matchPassword(password);
-    if (!isMatch) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email address or password',
-      });
-    }
-
-    sendTokenResponse(user, 200, res, 'Signed in successfully');
+    sendTokenResponse(matchedUser, 200, res, 'Signed in successfully');
   } catch (error) {
     console.error('Login Error:', error);
     res.status(500).json({

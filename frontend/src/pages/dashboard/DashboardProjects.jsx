@@ -93,7 +93,7 @@ const DashboardProjects = () => {
               Upload your source code, runnable binaries, and architecture details to showcase them on Project Vault.
             </p>
             <Link
-              to="/dashboard/add-project"
+              to="/projects/add-project"
               className="mt-4 inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />

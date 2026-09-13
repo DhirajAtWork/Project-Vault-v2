@@ -26,8 +26,8 @@ import {
 import { updateProfileApi, uploadAvatarApi } from '../../api/authApi';
 
 const DashboardProfile = () => {
-  const { user, setUser, activeRole, onRoleChange } = useOutletContext() || {};
-  const currentRole = activeRole || user?.accountType || 'recruiter';
+  const { user, setUser } = useOutletContext() || {};
+  const currentRole = user?.accountType === 'recruiter' ? 'recruiter' : 'student';
   const isRecruiter = currentRole === 'recruiter';
   const focusBorderClass = isRecruiter ? 'focus:border-purple-600' : 'focus:border-[#059669]';
 
@@ -77,7 +77,7 @@ const DashboardProfile = () => {
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || '',
-    accountType: user?.accountType || (activeRole || 'recruiter'),
+    accountType: user?.accountType || 'student',
     company: user?.company || '',
     avatar: user?.avatar || '',
     headline: user?.headline || '',
@@ -105,7 +105,7 @@ const DashboardProfile = () => {
       setFormData({
         name: user.name || '',
         email: user.email || '',
-        accountType: user.accountType || (activeRole || 'recruiter'),
+        accountType: user.accountType || 'student',
         company: user.company || '',
         avatar: user.avatar || '',
         headline: user.headline || '',
@@ -128,7 +128,7 @@ const DashboardProfile = () => {
         certifications: user.certifications || [],
       });
     }
-  }, [user, activeRole]);
+  }, [user]);
 
   const [skillInputs, setSkillInputs] = useState({
     languages: '',
@@ -441,7 +441,7 @@ const DashboardProfile = () => {
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 tracking-tight font-brand truncate">
-                {formData.name || (currentRole === 'recruiter' ? 'Pooja Deshmukh' : 'Student Developer')}
+                {formData.name || (currentRole === 'recruiter' ? 'Recruiter' : 'Student')}
               </h1>
               <span className={`${
                 currentRole === 'recruiter' ? 'bg-purple-100 text-purple-800' : 'bg-emerald-100 text-emerald-800'
@@ -452,7 +452,7 @@ const DashboardProfile = () => {
             <p className={`text-xs sm:text-sm font-semibold ${
               currentRole === 'recruiter' ? 'text-purple-700' : 'text-emerald-700'
             } mt-0.5`}>
-              {formData.headline || (currentRole === 'recruiter' ? 'Director of Technical Talent & University Relations' : 'Add your professional headline below')}
+              {formData.headline || (currentRole === 'recruiter' ? 'Add your recruiter headline below' : 'Add your professional headline below')}
             </p>
             <p className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
               <span className="truncate">{formData.email}</span>
@@ -583,7 +583,7 @@ const DashboardProfile = () => {
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                     className="w-full bg-[#f8fafc] border border-slate-300 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:border-purple-600"
-                    placeholder={currentRole === 'recruiter' ? 'e.g. Pooja Deshmukh' : 'e.g. Aarav Sharma'}
+                    placeholder="Enter your full name"
                   />
                 </div>
 
@@ -1219,10 +1219,10 @@ const DashboardProfile = () => {
 
               <div>
                 <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900 font-brand">
-                  {formData.name || (currentRole === 'recruiter' ? 'Pooja Deshmukh' : 'Your Full Name')}
+                  {formData.name || (currentRole === 'recruiter' ? 'Recruiter' : 'Student')}
                 </h1>
                 <p className={`text-sm font-bold ${currentRole === 'recruiter' ? 'text-purple-700' : 'text-emerald-700'} mt-0.5`}>
-                  {formData.headline || (currentRole === 'recruiter' ? 'Director of Technical Talent & University Relations' : 'Student Developer')}
+                  {formData.headline || ''}
                 </p>
                 <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600 font-medium mt-2">
                   <span className="flex items-center gap-1"><Mail className="w-3.5 h-3.5 text-slate-400" /> {formData.email}</span>

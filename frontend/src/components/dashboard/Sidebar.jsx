@@ -18,9 +18,9 @@ import { logoutUserApi } from '../../api/authApi';
  * - Student: Home, Projects, Analytics, Profile
  * - Recruiter: Home, Visit Projects, Profile (3 links)
  */
-const Sidebar = ({ user, activeRole, onRoleChange, isMobile = false }) => {
+const Sidebar = ({ user, isMobile = false }) => {
   const navigate = useNavigate();
-  const accountType = activeRole || user?.accountType || 'recruiter';
+  const accountType = user?.accountType === 'recruiter' ? 'recruiter' : 'student';
 
   const handleLogout = async () => {
     try {
@@ -78,7 +78,7 @@ const Sidebar = ({ user, activeRole, onRoleChange, isMobile = false }) => {
   };
 
   const navItems = getNavItems();
-  const userName = user?.name || (accountType === 'recruiter' ? 'Pooja Deshmukh' : 'Aarav Sharma');
+  const userName = user?.name || (accountType === 'recruiter' ? 'Recruiter' : 'Student');
   const userAvatar = user?.avatar || '';
 
   // Mobile Top Navigation Tabs with Right-Aligned Logout Icon
@@ -86,16 +86,13 @@ const Sidebar = ({ user, activeRole, onRoleChange, isMobile = false }) => {
     return (
       <header className="bg-white/95 backdrop-blur-md border-b border-stone-200/90 px-3 py-2 sticky top-0 z-40 md:hidden font-sans shadow-2xs">
         <div className="flex items-center justify-between gap-2">
-          {/* Mobile Role Switcher Pill */}
-          <button
-            type="button"
-            onClick={() => onRoleChange && onRoleChange(accountType === 'recruiter' ? 'student' : 'recruiter')}
-            className={`px-2.5 py-1 rounded-xl text-[10px] font-extrabold border transition-all shrink-0 cursor-pointer flex items-center gap-1 ${
+          {/* Mobile Role Badge (Non-interactive, reflects user signup role) */}
+          <div
+            className={`px-2.5 py-1 rounded-xl text-[10px] font-extrabold border transition-all shrink-0 flex items-center gap-1 ${
               accountType === 'recruiter'
                 ? 'bg-purple-50 text-purple-800 border-purple-200 shadow-2xs'
                 : 'bg-emerald-50 text-emerald-800 border-emerald-200 shadow-2xs'
             }`}
-            title={`Switch to ${accountType === 'recruiter' ? 'Student' : 'Recruiter'} View`}
           >
             {accountType === 'recruiter' ? (
               <Briefcase className="w-3 h-3 text-purple-600" />
@@ -103,7 +100,7 @@ const Sidebar = ({ user, activeRole, onRoleChange, isMobile = false }) => {
               <User className="w-3 h-3 text-emerald-600" />
             )}
             <span className="capitalize">{accountType}</span>
-          </button>
+          </div>
 
           {/* Mobile Horizontal Navigation Tabs */}
           <nav className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 flex-1 min-w-0">
@@ -166,36 +163,6 @@ const Sidebar = ({ user, activeRole, onRoleChange, isMobile = false }) => {
               {accountType} Workspace
             </span>
           </div>
-        </div>
-      </div>
-
-      {/* 2. Workspace Mode Switcher (Student vs Recruiter) */}
-      <div className="px-3 pt-3.5">
-        <div className="flex items-center p-1 bg-stone-100/90 rounded-xl border border-stone-200">
-          <button
-            type="button"
-            onClick={() => onRoleChange && onRoleChange('student')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-              accountType === 'student'
-                ? 'bg-white text-emerald-800 shadow-xs border border-stone-200/80'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <User className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Student</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onRoleChange && onRoleChange('recruiter')}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-              accountType === 'recruiter'
-                ? 'bg-white text-purple-800 shadow-xs border border-stone-200/80'
-                : 'text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Briefcase className="w-3.5 h-3.5 text-purple-600" />
-            <span>Recruiter</span>
-          </button>
         </div>
       </div>
 

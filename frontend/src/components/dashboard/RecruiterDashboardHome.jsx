@@ -50,9 +50,9 @@ const RecruiterDashboardHome = ({ user }) => {
     fetchRecruiterData();
   }, []);
 
-  const recruiterName = user?.name || 'Pooja Deshmukh';
-  const recruiterCompany = user?.company || 'Razorpay Engineering / Infosys Labs';
-  const recruiterHeadline = user?.headline || 'Director of University Talent Acquisition';
+  const recruiterName = user?.name || 'Recruiter';
+  const recruiterCompany = user?.company || '';
+  const recruiterHeadline = user?.headline || '';
   const recruiterAvatar = user?.avatar || '';
 
   const kpis = data?.kpis || {
@@ -84,7 +84,7 @@ const RecruiterDashboardHome = ({ user }) => {
                 {recruiterAvatar ? (
                   <img src={recruiterAvatar} alt={recruiterName} className="w-full h-full object-cover" />
                 ) : (
-                  <span>{recruiterName.substring(0, 2).toUpperCase() || 'PD'}</span>
+                  <span>{recruiterName.substring(0, 2).toUpperCase() || 'RC'}</span>
                 )}
               </div>
               <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-purple-500 ring-4 ring-slate-950 flex items-center justify-center" title="Verified Recruiter">
@@ -98,19 +98,27 @@ const RecruiterDashboardHome = ({ user }) => {
                   <Briefcase className="w-3 h-3 text-purple-400" />
                   Recruiter Workspace
                 </span>
-                <span className="bg-slate-800/90 text-slate-300 border border-slate-700 text-[11px] font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1">
-                  <Building2 className="w-3 h-3 text-indigo-400" />
-                  <span>{recruiterCompany}</span>
-                </span>
+                {recruiterCompany && (
+                  <span className="bg-slate-800/90 text-slate-300 border border-slate-700 text-[11px] font-semibold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                    <Building2 className="w-3 h-3 text-indigo-400" />
+                    <span>{recruiterCompany}</span>
+                  </span>
+                )}
               </div>
 
               <h1 className="text-2xl sm:text-4xl font-black tracking-tight font-brand text-white">
                 {recruiterName}
               </h1>
 
-              <p className="text-purple-300 text-xs sm:text-sm font-semibold flex items-center gap-2">
-                <span>{recruiterHeadline}</span>
-              </p>
+              {recruiterHeadline ? (
+                <p className="text-purple-300 text-xs sm:text-sm font-semibold flex items-center gap-2">
+                  <span>{recruiterHeadline}</span>
+                </p>
+              ) : (
+                <p className="text-slate-400 text-xs font-medium">
+                  Technical Talent Discovery & University Recruiting Portal
+                </p>
+              )}
             </div>
           </div>
 

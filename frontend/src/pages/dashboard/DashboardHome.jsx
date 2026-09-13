@@ -23,16 +23,16 @@ import {
 import RecruiterDashboardHome from '../../components/dashboard/RecruiterDashboardHome';
 
 const DashboardHome = () => {
-  const { user, activeRole } = useOutletContext() || {};
-  const currentRole = activeRole || user?.accountType || 'student';
+  const { user } = useOutletContext() || {};
+  const currentRole = user?.accountType === 'recruiter' ? 'recruiter' : 'student';
 
   if (currentRole === 'recruiter') {
     return <RecruiterDashboardHome user={user} />;
   }
 
-  const userName = user?.name || 'Student Developer';
+  const userName = user?.name || 'Student';
   const userAvatar = user?.avatar || '';
-  const headline = user?.headline || 'Full-Stack Software Engineer & AI Researcher';
+  const headline = user?.headline || '';
   const location = user?.location || '';
   const email = user?.email || '';
   const phone = user?.phone || '';

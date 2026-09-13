@@ -85,6 +85,22 @@ const DashboardProjects = () => {
 
       {/* Projects Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {projects.length === 0 && (
+          <div className="col-span-full py-16 text-center border-2 border-dashed border-stone-200 rounded-3xl bg-stone-50/50 p-6">
+            <FolderKanban className="w-12 h-12 text-stone-300 mx-auto mb-3" />
+            <h3 className="text-base font-bold text-slate-800">No Projects Published Yet</h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              Upload your source code, runnable binaries, and architecture details to showcase them on Project Vault.
+            </p>
+            <Link
+              to="/dashboard/add-project"
+              className="mt-4 inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-xs transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Publish Your First Project</span>
+            </Link>
+          </div>
+        )}
         {projects.map((project, idx) => (
           <div
             key={project._id || project.id || idx}

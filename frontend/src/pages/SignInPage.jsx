@@ -44,7 +44,7 @@ const SignInPage = () => {
           res.user?.role === 'admin' || 
           formData.email?.toLowerCase().includes('admin');
         
-        const userRole = isAdmin ? 'admin' : (res.user?.accountType || 'recruiter');
+        const userRole = isAdmin ? 'admin' : (res.user?.accountType || 'student');
         localStorage.setItem('vault_role', userRole);
 
         if (isAdmin) {

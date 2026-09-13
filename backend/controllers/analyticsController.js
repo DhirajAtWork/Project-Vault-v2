@@ -6,203 +6,6 @@ import CollaborationRequest from '../models/CollaborationRequest.js';
 import User from '../models/User.js';
 
 /**
- * Seed initial real database records if a student is new,
- * ensuring all collections have persistent MongoDB documents to compute from.
- */
-const seedInitialUserData = async (studentId) => {
-  // 1. Seed initial Projects if none exist
-  const existingProjects = await Project.countDocuments({ student: studentId });
-  if (existingProjects === 0) {
-    const defaultProjects = [
-      {
-        student: studentId,
-        title: 'Distributed Autonomous Agent Framework',
-        tagline: 'Ultra low-latency AI agent platform supporting multi-agent telemetry.',
-        category: 'Artificial Intelligence & Data Science',
-        subcategory: 'Generative AI & LLMs',
-        subdomain: 'Large Language Models (LLMs) & RAG Pipelines',
-        majorStack: 'Python / FastAPI / PyTorch',
-        thumbnailUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
-        description: 'Ultra low-latency AI agent platform supporting multi-agent telemetry, tool calling, and WASM runtime isolation.',
-        tags: ['Python', 'FastAPI', 'PyTorch', 'Rust', 'Redis'],
-        runCommand: 'uvicorn main:app --reload --port 8000',
-        githubUrl: 'https://github.com/developer/agent-framework',
-        liveUrl: 'https://agent-demo.projectvault.io',
-        status: 'Build Verified',
-        score: 99,
-        views: 480,
-        bookmarks: 142,
-        createdAt: new Date(Date.now() - 45 * 24 * 60 * 60 * 1000),
-      },
-      {
-        student: studentId,
-        title: 'Faculty Audit Credentials Vault',
-        tagline: 'Cryptographically verifiable student project attestations with ZK proofs.',
-        category: 'Computer Science & Engineering',
-        subcategory: 'Systems & Infrastructure',
-        subdomain: 'Blockchain, Smart Contracts & Web3',
-        majorStack: 'MERN (MongoDB, Express, React, Node)',
-        thumbnailUrl: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=800&q=80',
-        description: 'Cryptographically verifiable student project attestations with zero-knowledge proof credentials and tamper-proof faculty ledgers.',
-        tags: ['TypeScript', 'Solidity', 'Express', 'MongoDB'],
-        runCommand: 'npm run dev',
-        githubUrl: 'https://github.com/developer/faculty-vault',
-        liveUrl: 'https://vault-demo.projectvault.io',
-        status: 'Audit Approved',
-        score: 97,
-        views: 390,
-        bookmarks: 110,
-        createdAt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000),
-      },
-      {
-        student: studentId,
-        title: 'High-Throughput Distributed Cache',
-        tagline: 'LSM-tree based key-value storage engine in Rust.',
-        category: 'Computer Science & Engineering',
-        subcategory: 'Systems & Infrastructure',
-        subdomain: 'Cloud Systems & Distributed Infrastructure',
-        majorStack: 'Rust / Tokio / gRPC',
-        thumbnailUrl: 'https://images.unsplash.com/photo-1558494949-ef010cbdcc31?auto=format&fit=crop&w=800&q=80',
-        description: 'Ultra high-throughput embedded and distributed key-value store implementing RAFT consensus and asynchronous WAL replication.',
-        tags: ['Rust', 'Tokio', 'gRPC', 'Distributed Systems'],
-        runCommand: 'cargo run --release',
-        githubUrl: 'https://github.com/developer/rust-kv-store',
-        liveUrl: 'https://cache-demo.projectvault.io',
-        status: 'Build Verified',
-        score: 98,
-        views: 550,
-        bookmarks: 90,
-        createdAt: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000),
-      },
-    ];
-    await Project.insertMany(defaultProjects);
-  }
-
-  // 2. Seed initial Collaboration Requests if none exist
-  const existingCollabs = await CollaborationRequest.countDocuments({ student: studentId });
-  if (existingCollabs === 0) {
-    const defaultCollabs = [
-      {
-        student: studentId,
-        recruiterName: 'Pooja Deshmukh',
-        recruiterCompany: 'Razorpay',
-        recruiterRole: 'Staff University Talent Lead',
-        recruiterEmail: 'pdeshmukh@razorpay.com',
-        projectName: 'Distributed Autonomous Agent Framework',
-        message: 'Loved your Rust and FastAPI architecture. We are currently scouting engineers for our 2026 Core Infrastructure Internship in Bengaluru. Would you be open to an introductory technical call?',
-        status: 'pending',
-        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000),
-      },
-      {
-        student: studentId,
-        recruiterName: 'Rohan Singhal',
-        recruiterCompany: 'Microsoft India R&D',
-        recruiterRole: 'Senior Technical Recruiter (Hyderabad)',
-        recruiterEmail: 'rohan.s@microsoft.com',
-        projectName: 'High-Throughput Distributed Cache',
-        message: 'Impressive systems project and clean CI/CD presets. Our Cloud & AI team in Hyderabad is hiring full-stack new grads. Please let me know your availability.',
-        status: 'accepted',
-        createdAt: new Date(Date.now() - 6 * 24 * 60 * 60 * 1000),
-      },
-      {
-        student: studentId,
-        recruiterName: 'Ananya Iyer',
-        recruiterCompany: 'Infosys Innovation Labs',
-        recruiterRole: 'Principal Talent Partner (Bengaluru)',
-        recruiterEmail: 'ananya.i@infosys.com',
-        projectName: 'Faculty Audit Credentials Vault',
-        message: 'Your research benchmarks and clean model demo caught our attention on Project Vault. We are coordinating technical chats for machine learning researcher cohorts in Bengaluru.',
-        status: 'interview_scheduled',
-        createdAt: new Date(Date.now() - 11 * 24 * 60 * 60 * 1000),
-      },
-      {
-        student: studentId,
-        recruiterName: 'Devansh Sharma',
-        recruiterCompany: 'Swiggy Bytes',
-        recruiterRole: 'Engineering Hiring Lead',
-        recruiterEmail: 'devansh.s@swiggy.in',
-        projectName: 'Distributed Autonomous Agent Framework',
-        message: 'Looking for an ambitious frontend/full-stack engineer with strong React and clean UI fundamentals. Your Project Vault portfolio is one of the best we have reviewed.',
-        status: 'pending',
-        createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
-      },
-    ];
-    await CollaborationRequest.insertMany(defaultCollabs);
-  }
-
-  // 3. Seed real ProfileView entries if none exist
-  const existingViews = await ProfileView.countDocuments({ student: studentId });
-  if (existingViews < 50) {
-    const viewEntries = [];
-    const companies = [
-      { company: 'Razorpay', industry: 'FinTech & Payments' },
-      { company: 'Flipkart', industry: 'E-Commerce & Supply Chain' },
-      { company: 'Google India (Bengaluru)', industry: 'Big Tech & Cloud Platforms' },
-      { company: 'Microsoft India (Hyderabad)', industry: 'Big Tech & Cloud Platforms' },
-      { company: 'Infosys Innovation Labs', industry: 'Enterprise AI & Cloud' },
-      { company: 'TCS Research', industry: 'Enterprise R&D' },
-      { company: 'Jio Platforms', industry: 'Telecom & Cloud Infra' },
-      { company: 'Swiggy Bytes', industry: 'Consumer Tech & Logistics' },
-    ];
-    const keywords = ['React', 'FastAPI', 'Rust', 'PyTorch', 'Distributed Systems', 'TypeScript', 'Node.js'];
-
-    for (let i = 0; i < 180; i++) {
-      const isRecruiter = Math.random() > 0.35;
-      const comp = companies[Math.floor(Math.random() * companies.length)];
-      const kw = keywords[Math.floor(Math.random() * keywords.length)];
-      const daysAgo = Math.floor(Math.random() * 120);
-
-      viewEntries.push({
-        student: studentId,
-        viewerRole: isRecruiter ? 'recruiter' : 'student',
-        viewerCompany: isRecruiter ? comp.company : 'Peer Student',
-        industry: comp.industry,
-        searchKeyword: kw,
-        createdAt: new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000),
-      });
-    }
-    await ProfileView.insertMany(viewEntries);
-  }
-
-  // 4. Seed real ActivityLog entries for the past 365 days if needed
-  const existingActivity = await ActivityLog.countDocuments({ student: studentId });
-  if (existingActivity < 100) {
-    const activityEntries = [];
-    const today = new Date();
-
-    for (let i = 364; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(today.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
-      const dayOfWeek = d.getDay();
-
-      // Pseudo-random deterministic activity
-      const seed = (d.getFullYear() * 10000) + ((d.getMonth() + 1) * 100) + d.getDate();
-      const rand = Math.sin(seed) * 10000;
-      const normalized = rand - Math.floor(rand);
-
-      let count = 0;
-      if (dayOfWeek >= 1 && dayOfWeek <= 5) {
-        if (normalized > 0.35) count = Math.floor(normalized * 6) + 1;
-      } else {
-        if (normalized > 0.65) count = Math.floor(normalized * 3) + 1;
-      }
-
-      if (count > 0) {
-        activityEntries.push({
-          student: studentId,
-          type: 'commit_logged',
-          count,
-          date: dateStr,
-          createdAt: d,
-        });
-      }
-    }
-    await ActivityLog.insertMany(activityEntries);
-  }
-};
-
-/**
  * @route   GET /api/analytics/student
  * @desc    Get dynamically calculated student analytics from MongoDB collections
  * @access  Private (Logged-in Student)
@@ -210,9 +13,6 @@ const seedInitialUserData = async (studentId) => {
 export const getStudentAnalytics = async (req, res) => {
   try {
     const studentId = req.user._id;
-
-    // Ensure database records exist for this student so calculations run on real MongoDB documents
-    await seedInitialUserData(studentId);
 
     // 1. DYNAMIC KPI: Total Projects owned by student
     const totalProjects = await Project.countDocuments({ student: studentId });
@@ -641,20 +441,11 @@ export const getRecruiterAnalytics = async (req, res) => {
       hasExecutable: true,
     });
 
-    // 4. DYNAMIC OUTREACH PIPELINE: From CollaborationRequest collection
-    let inquiries = await CollaborationRequest.find({
+    const inquiries = await CollaborationRequest.find({
       $or: [{ recruiter: recruiterId }, { recruiterEmail: req.user.email }],
     })
       .populate('student', 'name email avatar headline location phone')
       .sort({ createdAt: -1 });
-
-    // Fallback if this is a fresh test recruiter
-    if (inquiries.length === 0) {
-      inquiries = await CollaborationRequest.find({})
-        .populate('student', 'name email avatar headline location phone')
-        .limit(10)
-        .sort({ createdAt: -1 });
-    }
 
     const totalOutreach = inquiries.length;
     const interviewsScheduled = inquiries.filter((i) => i.status === 'interview_scheduled').length;

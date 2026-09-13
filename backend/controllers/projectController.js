@@ -2,65 +2,7 @@ import Project from '../models/Project.js';
 import ActivityLog from '../models/ActivityLog.js';
 import ProfileView from '../models/ProfileView.js';
 
-/**
- * Seed initial sample projects for a student if none exist
- */
-const seedInitialProjects = async (studentId) => {
-  const defaults = [
-    {
-      student: studentId,
-      title: 'Distributed Autonomous Agent Framework',
-      tagline: 'Ultra low-latency AI agent platform supporting multi-agent telemetry.',
-      category: 'Artificial Intelligence & Data Science',
-      subcategory: 'Generative AI & LLMs',
-      subdomain: 'Large Language Models (LLMs) & RAG Pipelines',
-      majorStack: 'Python / FastAPI / PyTorch',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
-      description: 'Ultra low-latency AI agent platform supporting multi-agent telemetry, tool calling, and WASM runtime isolation.',
-      tags: ['Python', 'FastAPI', 'PyTorch', 'Rust', 'Redis'],
-      runCommand: 'uvicorn main:app --reload --port 8000',
-      githubUrl: 'https://github.com/developer/agent-framework',
-      liveUrl: 'https://agent-demo.projectvault.io',
-      status: 'Build Verified',
-      score: 99,
-      views: 480,
-      bookmarks: 142,
-    },
-    {
-      student: studentId,
-      title: 'Faculty Audit Credentials Vault',
-      tagline: 'Cryptographically verifiable student project attestations with ZK proofs.',
-      category: 'Computer Science & Engineering',
-      subcategory: 'Systems & Infrastructure',
-      subdomain: 'Blockchain, Smart Contracts & Web3',
-      majorStack: 'MERN (MongoDB, Express, React, Node)',
-      thumbnailUrl: 'https://images.unsplash.com/photo-1639762681485-074b7f938ba0?auto=format&fit=crop&w=800&q=80',
-      description: 'Cryptographically verifiable student project attestations with zero-knowledge proof credentials and tamper-proof faculty ledgers.',
-      tags: ['TypeScript', 'Solidity', 'Express', 'MongoDB'],
-      runCommand: 'npm run dev',
-      githubUrl: 'https://github.com/developer/faculty-vault',
-      liveUrl: 'https://vault-demo.projectvault.io',
-      status: 'Audit Approved',
-      score: 97,
-      views: 390,
-      bookmarks: 110,
-    },
-  ];
 
-  const created = await Project.insertMany(defaults);
-
-  // Log activity for initial projects
-  const today = new Date().toISOString().split('T')[0];
-  await ActivityLog.create({
-    student: studentId,
-    type: 'project_created',
-    count: 2,
-    date: today,
-    metadata: { note: 'Initial Showcase Repositories Published' },
-  });
-
-  return created;
-};
 
 /**
  * @route   POST /api/projects
@@ -179,11 +121,6 @@ export const getProjects = async (req, res) => {
     let projects = await Project.find(filter)
       .populate('student', 'name avatar accountType headline')
       .sort({ createdAt: -1 });
-
-    // If student requested their own projects and none exist, seed default
-    if (scope === 'me' && req.user && projects.length === 0) {
-      projects = await seedInitialProjects(req.user._id);
-    }
 
     res.status(200).json({
       success: true,

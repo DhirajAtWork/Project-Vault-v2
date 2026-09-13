@@ -1,6 +1,9 @@
 import Project from '../models/Project.js';
 import ActivityLog from '../models/ActivityLog.js';
 import ProfileView from '../models/ProfileView.js';
+import CollaborationRequest from '../models/CollaborationRequest.js';
+import User from '../models/User.js';
+import { sendProjectRemovedEmail } from '../utils/sendEmail.js';
 
 
 
@@ -30,6 +33,7 @@ export const createProject = async (req, res) => {
       githubUrl,
       liveUrl,
       demoVideoUrl,
+      executableFile,
     } = req.body;
 
     if (!title || !category) {
@@ -37,6 +41,20 @@ export const createProject = async (req, res) => {
         success: false,
         message: 'Project title and category are required',
       });
+    }
+
+    // Normalize command and environment parameters from various frontend payload conventions
+    const normalizedInstallCmd = installCmd || req.body.installCommand || '';
+    const normalizedRunCmd = runCommand || '';
+    const normalizedTestCmd = testCmd || req.body.testCommand || '';
+    
+    let normalizedEnvVariables = [];
+    if (Array.isArray(envVariables) && envVariables.length > 0) {
+      normalizedEnvVariables = envVariables;
+    } else if (Array.isArray(req.body.envVars)) {
+      normalizedEnvVariables = req.body.envVars
+        .filter(ev => ev && ev.key && ev.key.trim())
+        .map(ev => ({ key: ev.key.trim(), value: ev.value || '' }));
     }
 
     const project = await Project.create({
@@ -50,10 +68,10 @@ export const createProject = async (req, res) => {
       thumbnailUrl: thumbnailUrl || '',
       description: description || '',
       tags: Array.isArray(tags) ? tags : [],
-      installCmd: installCmd || '',
-      runCommand: runCommand || '',
-      testCmd: testCmd || '',
-      envVariables: Array.isArray(envVariables) ? envVariables : [],
+      installCmd: normalizedInstallCmd,
+      runCommand: normalizedRunCmd,
+      testCmd: normalizedTestCmd,
+      envVariables: normalizedEnvVariables,
       envNotes: envNotes || '',
       githubUrl: githubUrl || '',
       liveUrl: liveUrl || '',
@@ -205,7 +223,7 @@ export const getProjectById = async (req, res) => {
  */
 export const deleteProject = async (req, res) => {
   try {
-    const project = await Project.findOneAndDelete({
+    const project = await Project.findOne({
       _id: req.params.id,
       student: req.user._id,
     });
@@ -217,9 +235,57 @@ export const deleteProject = async (req, res) => {
       });
     }
 
+    const titleEscaped = project.title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+    // 1. Find all collaboration inquiries associated with this project
+    const relatedCollabs = await CollaborationRequest.find({
+      student: req.user._id,
+      $or: [
+        { projectId: project._id },
+        { projectName: project.title },
+        { projectName: { $regex: new RegExp(`^${titleEscaped}$`, 'i') } },
+      ],
+    });
+
+    // 2. Dispatch email to each recruiter informing them the owner removed the project
+    for (const collab of relatedCollabs) {
+      const recruiterTargetEmail =
+        collab.recruiterEmail || (collab.recruiter ? (await User.findById(collab.recruiter))?.email : null);
+
+      if (recruiterTargetEmail) {
+        sendProjectRemovedEmail({
+          recruiterEmail: recruiterTargetEmail,
+          recruiterName: collab.recruiterName || 'Recruiter',
+          studentName: req.user.name || 'The project developer',
+          projectName: project.title,
+        }).catch((err) =>
+          console.error(`Failed to send project removed email to ${recruiterTargetEmail}:`, err.message)
+        );
+      }
+    }
+
+    // 3. Remove all associated collaboration requests so they disappear from Analytics
+    await CollaborationRequest.deleteMany({
+      student: req.user._id,
+      $or: [
+        { projectId: project._id },
+        { projectName: project.title },
+        { projectName: { $regex: new RegExp(`^${titleEscaped}$`, 'i') } },
+      ],
+    });
+
+    // 4. Delete the project itself
+    await Project.findByIdAndDelete(project._id);
+
+    // 5. If student has no remaining projects, clean up profile views
+    const remainingProjectsCount = await Project.countDocuments({ student: req.user._id });
+    if (remainingProjectsCount === 0) {
+      await ProfileView.deleteMany({ student: req.user._id });
+    }
+
     res.status(200).json({
       success: true,
-      message: 'Project removed successfully',
+      message: 'Project and associated collaboration inquiries removed successfully',
     });
   } catch (error) {
     console.error('Error in deleteProject:', error);
@@ -415,6 +481,104 @@ export const evaluateProjectAi = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to run AI project evaluation',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @route   PUT /api/projects/:id
+ * @desc    Update an existing project owned by the authenticated student
+ * @access  Private (Student)
+ */
+export const updateProject = async (req, res) => {
+  try {
+    const studentId = req.user._id;
+    const { id } = req.params;
+
+    const project = await Project.findById(id);
+
+    if (!project) {
+      return res.status(404).json({
+        success: false,
+        message: 'Project not found',
+      });
+    }
+
+    // Authorization check: ensure logged in user owns this project or is admin
+    if (project.student.toString() !== studentId.toString() && req.user.role !== 'admin' && req.user.accountType !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Unauthorized: You can only edit your own projects',
+      });
+    }
+
+    const {
+      title,
+      tagline,
+      category,
+      subcategory,
+      subdomain,
+      majorStack,
+      thumbnailUrl,
+      description,
+      tags,
+      installCmd,
+      runCommand,
+      testCmd,
+      envVariables,
+      envNotes,
+      githubUrl,
+      liveUrl,
+      demoVideoUrl,
+      executableFile,
+    } = req.body;
+
+    // Normalize command and environment parameters
+    const normalizedInstallCmd = installCmd !== undefined ? installCmd : (req.body.installCommand !== undefined ? req.body.installCommand : project.installCmd);
+    const normalizedRunCmd = runCommand !== undefined ? runCommand : project.runCommand;
+    const normalizedTestCmd = testCmd !== undefined ? testCmd : (req.body.testCommand !== undefined ? req.body.testCommand : project.testCmd);
+
+    let normalizedEnvVariables = project.envVariables;
+    if (Array.isArray(envVariables)) {
+      normalizedEnvVariables = envVariables;
+    } else if (Array.isArray(req.body.envVars)) {
+      normalizedEnvVariables = req.body.envVars
+        .filter((ev) => ev && ev.key && ev.key.trim())
+        .map((ev) => ({ key: ev.key.trim(), value: ev.value || '' }));
+    }
+
+    if (title !== undefined && title.trim()) project.title = title.trim();
+    if (tagline !== undefined) project.tagline = tagline;
+    if (category !== undefined && category.trim()) project.category = category.trim();
+    if (subcategory !== undefined) project.subcategory = subcategory;
+    if (subdomain !== undefined) project.subdomain = subdomain;
+    if (majorStack !== undefined) project.majorStack = majorStack;
+    if (thumbnailUrl !== undefined) project.thumbnailUrl = thumbnailUrl;
+    if (description !== undefined) project.description = description;
+    if (Array.isArray(tags)) project.tags = tags;
+    project.installCmd = normalizedInstallCmd;
+    project.runCommand = normalizedRunCmd;
+    project.testCmd = normalizedTestCmd;
+    project.envVariables = normalizedEnvVariables;
+    if (envNotes !== undefined) project.envNotes = envNotes;
+    if (githubUrl !== undefined) project.githubUrl = githubUrl;
+    if (liveUrl !== undefined) project.liveUrl = liveUrl;
+    if (demoVideoUrl !== undefined) project.demoVideoUrl = demoVideoUrl;
+    if (executableFile !== undefined) project.executableFile = executableFile;
+
+    await project.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'Project updated successfully',
+      project,
+    });
+  } catch (error) {
+    console.error('Error in updateProject:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update project',
       error: error.message,
     });
   }

@@ -5,6 +5,7 @@ import {
   createProject,
   getProjects,
   getProjectById,
+  updateProject,
   deleteProject,
   uploadExecutable,
   evaluateProjectAi,
@@ -12,10 +13,9 @@ import {
 
 const router = express.Router();
 
-// Public / optional auth routes
+// Public / optional auth routes (scope === 'me' strictly requires authentication)
 router.get('/', (req, res, next) => {
-  // Try protect middleware if authorization header / cookie exists
-  if (req.cookies?.token || req.headers?.authorization) {
+  if (req.query?.scope === 'me' || req.cookies?.token || req.headers?.authorization) {
     return protect(req, res, next);
   }
   next();
@@ -33,6 +33,7 @@ router.post('/:id/evaluate-ai', evaluateProjectAi);
 
 // Protected routes (Student project creation & management)
 router.post('/', protect, createProject);
+router.put('/:id', protect, updateProject);
 router.delete('/:id', protect, deleteProject);
 router.post('/upload-executable', protect, uploadSingleExecutable, uploadExecutable);
 

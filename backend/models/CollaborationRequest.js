@@ -13,6 +13,12 @@ const collaborationRequestSchema = new mongoose.Schema(
       required: [true, 'Student ID reference is required'],
       index: true,
     },
+    projectId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Project',
+      default: null,
+      index: true,
+    },
     recruiter: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { useOutletContext, Link } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useOutletContext, useLocation, Link } from 'react-router-dom';
 import { 
   Plus, 
   FolderKanban, 
@@ -15,34 +15,75 @@ import {
   Sparkles,
   RefreshCw,
   Eye,
-  Clock
+  Clock,
+  Pencil
 } from 'lucide-react';
 import { getMyProjectsApi, deleteProjectApi } from '../../api/projectApi';
 
 const DashboardProjects = () => {
   const { user } = useOutletContext() || {};
+  const location = useLocation();
 
   const [copiedId, setCopiedId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState([]);
 
-  const fetchProjects = async () => {
-    setLoading(true);
+  // Fetch projects from backend API
+  const fetchProjects = useCallback(async (showLoadingSpinner = true) => {
+    if (showLoadingSpinner) {
+      setLoading(true);
+    }
     try {
       const res = await getMyProjectsApi();
-      if (res.success && res.projects) {
-        setProjects(res.projects);
+      if (res.success && Array.isArray(res.projects)) {
+        setProjects((prev) => {
+          // If a project was just added and passed via navigation state, ensure it stays present
+          const passedProj = location.state?.newProject;
+          let combined = [...res.projects];
+          if (passedProj) {
+            const passedId = passedProj._id || passedProj.id;
+            const exists = combined.some((p) => (p._id || p.id) === passedId);
+            if (!exists) {
+              combined = [passedProj, ...combined];
+            }
+          }
+          return combined;
+        });
       }
     } catch (err) {
       console.error('Failed to load projects from backend:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [location.state]);
 
+  // Immediately inject newly added project if passed via navigation state so user sees it with zero latency
   useEffect(() => {
-    fetchProjects();
-  }, []);
+    if (location.state?.newProject) {
+      const newProj = location.state.newProject;
+      setProjects((prev) => {
+        const passedId = newProj._id || newProj.id;
+        const exists = prev.some((p) => (p._id || p.id) === passedId);
+        if (exists) return prev;
+        return [newProj, ...prev];
+      });
+      setLoading(false);
+    }
+  }, [location.state]);
+
+  // Auto-fetch whenever route changes, location key changes, or navigation lands here
+  useEffect(() => {
+    fetchProjects(projects.length === 0);
+  }, [location.key, location.state, fetchProjects]);
+
+  // Auto-sync when window re-focuses without causing jarring reload
+  useEffect(() => {
+    const handleFocus = () => {
+      fetchProjects(false);
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [fetchProjects]);
 
   const handleCopyRunCmd = (id, cmd) => {
     navigator.clipboard.writeText(cmd);
@@ -193,11 +234,11 @@ const DashboardProjects = () => {
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleCopyRunCmd(project.id, project.runCommand)}
+                      onClick={() => handleCopyRunCmd(project._id || project.id, project.runCommand)}
                       className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer shrink-0"
                       title="Copy Run Command"
                     >
-                      {copiedId === project.id ? (
+                      {copiedId === (project._id || project.id) ? (
                         <Check className="w-3.5 h-3.5 text-emerald-400" />
                       ) : (
                         <Copy className="w-3.5 h-3.5" />
@@ -221,13 +262,24 @@ const DashboardProjects = () => {
                   </div>
                 )}
 
-                <Link
-                  to={`/project/view-project/${project._id || project.id}`}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>View Project</span>
-                </Link>
+                <div className="flex items-center gap-2">
+                  <Link
+                    to={`/projects/edit-project/${project._id || project.id}`}
+                    className="bg-stone-100 hover:bg-stone-200 text-slate-800 text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs border border-stone-200/80 cursor-pointer active:scale-95"
+                    title="Edit Project Details"
+                  >
+                    <Pencil className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Edit Details</span>
+                  </Link>
+
+                  <Link
+                    to={`/project/view-project/${project._id || project.id}`}
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    <span>View Project</span>
+                  </Link>
+                </div>
               </div>
             </div>
           </div>

@@ -65,7 +65,37 @@ export const configurePassport = () => {
       async (accessToken, refreshToken, profile, done) => {
         try {
           const githubId = profile.id;
-          const email = profile.emails?.[0]?.value || `${profile.username || githubId}@users.noreply.github.com`;
+          let email = profile.emails?.[0]?.value;
+
+          // Attempt to fetch real verified primary email from GitHub API if private or noreply
+          if (!email || email.includes('noreply.github.com')) {
+            try {
+              const emailsRes = await fetch('https://api.github.com/user/emails', {
+                headers: {
+                  Authorization: `Bearer ${accessToken}`,
+                  'User-Agent': 'Project-Vault-v2',
+                },
+              });
+              if (emailsRes.ok) {
+                const emailsList = await emailsRes.json();
+                if (Array.isArray(emailsList) && emailsList.length > 0) {
+                  const verifiedPrimary = emailsList.find((e) => e.primary && e.verified);
+                  const anyVerified = emailsList.find((e) => e.verified && !e.email.includes('noreply'));
+                  const bestEmail = verifiedPrimary?.email || anyVerified?.email;
+                  if (bestEmail) {
+                    email = bestEmail;
+                  }
+                }
+              }
+            } catch (err) {
+              console.warn('Could not fetch emails from GitHub user/emails:', err.message);
+            }
+          }
+
+          if (!email) {
+            email = `${profile.username || githubId}@users.noreply.github.com`;
+          }
+
           const name = profile.displayName || profile.username || 'GitHub Developer';
           const avatar = profile.photos?.[0]?.value || profile._json?.avatar_url || '';
 

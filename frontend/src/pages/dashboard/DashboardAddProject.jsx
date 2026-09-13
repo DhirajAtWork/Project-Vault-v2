@@ -612,11 +612,19 @@ const DashboardAddProject = () => {
     setErrorMsg('');
 
     try {
-      await createProjectApi(formData);
+      const response = await createProjectApi(formData);
       setSuccessMsg('Project with execution commands & media successfully published!');
+      const newProject = response?.project;
       setTimeout(() => {
-        navigate('/dashboard/projects');
-      }, 1000);
+        navigate('/dashboard/projects', {
+          state: {
+            newProject,
+            refresh: true,
+            timestamp: Date.now(),
+          },
+          replace: true,
+        });
+      }, 700);
     } catch (err) {
       console.error('Error publishing project:', err);
       setErrorMsg(err.message || 'Failed to publish project to database');

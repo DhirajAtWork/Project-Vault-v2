@@ -140,6 +140,21 @@ const userSchema = new mongoose.Schema(
       default: null,
       select: false,
     },
+    emailChangeCandidate: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    emailChangeOtp: {
+      type: String,
+      default: null,
+      select: false,
+    },
+    emailChangeOtpExpires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
   },
   {
     timestamps: true,
@@ -155,6 +170,9 @@ const removeSensitiveFields = (doc, ret) => {
   delete ret.otpExpires;
   delete ret.resetPasswordOtp;
   delete ret.resetPasswordOtpExpires;
+  delete ret.emailChangeOtp;
+  delete ret.emailChangeOtpExpires;
+  delete ret.emailChangeCandidate;
   delete ret.googleId;
   delete ret.githubId;
   return ret;

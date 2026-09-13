@@ -1,3 +1,5 @@
+import { getAuthHeaders } from './authApi';
+
 const API_BASE_URL = typeof window !== 'undefined' && window.location.port === '5173'
   ? 'http://localhost:5000/api/admin'
   : '/api/admin';
@@ -6,10 +8,11 @@ const API_BASE_URL = typeof window !== 'undefined' && window.location.port === '
  * Fetch Admin Overview Metrics & System Stats
  */
 export const getAdminOverviewApi = async () => {
-  const response = await fetch(`${API_BASE_URL}/overview`, {
+  const response = await fetch(`${API_BASE_URL}/overview?_t=${Date.now()}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
+    cache: 'no-store',
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch admin overview');
@@ -20,10 +23,11 @@ export const getAdminOverviewApi = async () => {
  * Fetch All Student Users for Administration
  */
 export const getAdminUsersApi = async () => {
-  const response = await fetch(`${API_BASE_URL}/users`, {
+  const response = await fetch(`${API_BASE_URL}/users?_t=${Date.now()}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
+    cache: 'no-store',
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch users');
@@ -34,10 +38,11 @@ export const getAdminUsersApi = async () => {
  * Fetch All Student Accounts Dedicated Endpoint
  */
 export const getAdminStudentsApi = async () => {
-  const response = await fetch(`${API_BASE_URL}/students`, {
+  const response = await fetch(`${API_BASE_URL}/students?_t=${Date.now()}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
+    cache: 'no-store',
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch students');
@@ -48,10 +53,11 @@ export const getAdminStudentsApi = async () => {
  * Fetch All Recruiter Accounts
  */
 export const getAdminRecruitersApi = async () => {
-  const response = await fetch(`${API_BASE_URL}/recruiters`, {
+  const response = await fetch(`${API_BASE_URL}/recruiters?_t=${Date.now()}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
+    cache: 'no-store',
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch recruiters');
@@ -62,10 +68,11 @@ export const getAdminRecruitersApi = async () => {
  * Fetch Projects with Dangerous Health Score (score < 40)
  */
 export const getDangerousProjectsApi = async () => {
-  const response = await fetch(`${API_BASE_URL}/dangerous-projects`, {
+  const response = await fetch(`${API_BASE_URL}/dangerous-projects?_t=${Date.now()}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
+    cache: 'no-store',
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch dangerous projects');
@@ -76,10 +83,11 @@ export const getDangerousProjectsApi = async () => {
  * Fetch All Projects with Health Scores (Dangerous vs Healthy)
  */
 export const getAdminProjectsHealthApi = async () => {
-  const response = await fetch(`${API_BASE_URL}/projects-health`, {
+  const response = await fetch(`${API_BASE_URL}/projects-health?_t=${Date.now()}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
+    cache: 'no-store',
   });
   const data = await response.json();
   if (!response.ok) throw new Error(data.message || 'Failed to fetch projects health');
@@ -92,7 +100,7 @@ export const getAdminProjectsHealthApi = async () => {
 export const deleteAdminUserApi = async (userId) => {
   const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
     method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     credentials: 'include',
   });
   const data = await response.json();

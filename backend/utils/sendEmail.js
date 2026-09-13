@@ -250,3 +250,197 @@ export const sendAccountRemovedEmail = async (email, name) => {
     html,
   });
 };
+
+/**
+ * 5. Send Collaboration Request Notification to Student Developer (when recruiter requests collaboration)
+ */
+export const sendCollaborationInquiryEmail = async ({
+  studentEmail,
+  studentName,
+  recruiterName,
+  recruiterCompany,
+  recruiterRole,
+  projectName,
+  message,
+}) => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; }
+          .container { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 24px; padding: 40px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,0,0,0.04); }
+          .badge { background: #f3e8ff; color: #7e22ce; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 14px; border-radius: 999px; display: inline-block; margin-bottom: 20px; border: 1px solid #e9d5ff; }
+          .title { font-size: 24px; font-weight: 800; color: #0f172a; margin-bottom: 12px; letter-spacing: -0.5px; }
+          .text { font-size: 15px; color: #334155; line-height: 1.6; margin-bottom: 20px; }
+          .recruiter-card { background: #fdf4ff; border: 1px solid #f0abfc; border-radius: 16px; padding: 20px; margin: 24px 0; }
+          .recruiter-name { font-size: 16px; font-weight: 800; color: #701a75; }
+          .recruiter-sub { font-size: 13px; color: #86198f; margin-top: 4px; }
+          .project-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 20px; margin: 20px 0; }
+          .project-label { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin-bottom: 6px; }
+          .project-title { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 10px; }
+          .message-quote { font-size: 14px; color: #475569; font-style: italic; line-height: 1.6; border-left: 3px solid #7e22ce; padding-left: 12px; }
+          .cta-btn { display: inline-block; background: #7e22ce; color: #ffffff !important; text-decoration: none; font-weight: 700; padding: 14px 28px; border-radius: 14px; font-size: 14px; margin-top: 16px; }
+          .footer { font-size: 12px; color: #94a3b8; margin-top: 36px; border-top: 1px solid #f1f5f9; padding-top: 18px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="badge">🤝 New Recruiter Collaboration Request</div>
+          <div class="title">Great news, ${studentName}! 🎉</div>
+          <p class="text">A verified technical recruiter was impressed by your work on Project Vault and has initiated a direct collaboration request with you.</p>
+          
+          <div class="recruiter-card">
+            <div class="recruiter-name">${recruiterName}</div>
+            <div class="recruiter-sub">${recruiterRole || 'Technical Recruiter'} &bull; <strong>${recruiterCompany || 'Talent Acquisition'}</strong></div>
+          </div>
+
+          <div class="project-box">
+            <div class="project-label">Project of Interest</div>
+            <div class="project-title">${projectName}</div>
+            <div class="message-quote">"${message}"</div>
+          </div>
+
+          <p class="text">Review this inquiry on your dashboard to accept the collaboration and connect with the recruiter.</p>
+          <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard/analytics" class="cta-btn">View Request & Connect &rarr;</a>
+          
+          <div class="footer">&copy; 2026 Project Vault v2 &bull; Talent & Collaboration Ecosystem</div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendMail({
+    to: studentEmail,
+    subject: `New Collaboration Request for "${projectName}" from ${recruiterName} (${recruiterCompany})`,
+    html,
+  });
+};
+
+/**
+ * 6. Send Collaboration Accepted Notification to Recruiter (when student accepts request)
+ */
+export const sendCollaborationAcceptedEmail = async ({
+  recruiterEmail,
+  recruiterName,
+  studentName,
+  studentEmail,
+  studentHeadline,
+  projectName,
+}) => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; }
+          .container { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 24px; padding: 40px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,0,0,0.04); }
+          .badge { background: #dcfce7; color: #15803d; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 14px; border-radius: 999px; display: inline-block; margin-bottom: 20px; border: 1px solid #bbf7d0; }
+          .title { font-size: 24px; font-weight: 800; color: #0f172a; margin-bottom: 12px; letter-spacing: -0.5px; }
+          .text { font-size: 15px; color: #334155; line-height: 1.6; margin-bottom: 20px; }
+          .student-card { background: #f0fdf4; border: 1px solid #86efac; border-radius: 16px; padding: 20px; margin: 24px 0; }
+          .student-name { font-size: 17px; font-weight: 800; color: #14532d; }
+          .student-sub { font-size: 13px; color: #166534; margin-top: 4px; }
+          .student-email { font-family: monospace; font-size: 14px; color: #047857; margin-top: 8px; font-weight: 700; }
+          .project-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 16px; padding: 18px; margin: 20px 0; }
+          .project-label { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin-bottom: 4px; }
+          .project-title { font-size: 16px; font-weight: 700; color: #0f172a; }
+          .cta-btn { display: inline-block; background: #0f172a; color: #ffffff !important; text-decoration: none; font-weight: 700; padding: 14px 28px; border-radius: 14px; font-size: 14px; margin-top: 16px; }
+          .footer { font-size: 12px; color: #94a3b8; margin-top: 36px; border-top: 1px solid #f1f5f9; padding-top: 18px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="badge">&check; Collaboration Accepted</div>
+          <div class="title">Collaboration Request Accepted! 🎉</div>
+          <p class="text">Hi ${recruiterName || 'Talent Acquisition Team'},<br>Good news! <strong>${studentName}</strong> has accepted your collaboration inquiry regarding their project <strong>"${projectName}"</strong> on Project Vault.</p>
+          
+          <div class="student-card">
+            <div class="student-name">${studentName}</div>
+            <div class="student-sub">${studentHeadline || 'Student Developer & Engineer'}</div>
+            <div class="student-email">Email: <a href="mailto:${studentEmail}" style="color: #047857; text-decoration: underline;">${studentEmail}</a></div>
+          </div>
+
+          <div class="project-box">
+            <div class="project-label">Connected Project</div>
+            <div class="project-title">${projectName}</div>
+          </div>
+
+          <p class="text">You can now proceed with direct outreach, schedule an introductory screening, or coordinate technical interviews.</p>
+          <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard/analytics" class="cta-btn">Open Recruiter Dashboard &rarr;</a>
+          
+          <div class="footer">&copy; 2026 Project Vault v2 &bull; Verified Candidate Pipeline</div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendMail({
+    to: recruiterEmail,
+    subject: `${studentName} accepted your collaboration request for "${projectName}"`,
+    html,
+  });
+};
+
+/**
+ * 7. Send Notification to Recruiter when Project Owner Removes a Project
+ */
+export const sendProjectRemovedEmail = async ({
+  recruiterEmail,
+  recruiterName,
+  studentName,
+  projectName,
+}) => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <style>
+          body { font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; }
+          .container { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 24px; padding: 40px; border: 1px solid #e2e8f0; box-shadow: 0 10px 25px rgba(0,0,0,0.04); }
+          .badge { background: #fef2f2; color: #b91c1c; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 14px; border-radius: 999px; display: inline-block; margin-bottom: 20px; border: 1px solid #fecaca; }
+          .title { font-size: 24px; font-weight: 800; color: #0f172a; margin-bottom: 12px; letter-spacing: -0.5px; }
+          .text { font-size: 15px; color: #334155; line-height: 1.6; margin-bottom: 20px; }
+          .project-box { background: #fff1f2; border: 1px solid #fda4af; border-radius: 16px; padding: 20px; margin: 24px 0; }
+          .project-label { font-size: 11px; font-weight: 800; text-transform: uppercase; color: #9f1239; letter-spacing: 0.5px; margin-bottom: 6px; }
+          .project-title { font-size: 18px; font-weight: 800; color: #881337; }
+          .notice-text { font-size: 14px; color: #475569; line-height: 1.6; margin-top: 10px; }
+          .cta-btn { display: inline-block; background: #0f172a; color: #ffffff !important; text-decoration: none; font-weight: 700; padding: 14px 28px; border-radius: 14px; font-size: 14px; margin-top: 16px; }
+          .footer { font-size: 12px; color: #94a3b8; margin-top: 36px; border-top: 1px solid #f1f5f9; padding-top: 18px; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="badge">Project Removed Notice</div>
+          <div class="title">Project Showcase Removed</div>
+          <p class="text">Hi <strong>${recruiterName || 'Talent Acquisition Team'}</strong>,</p>
+          <p class="text">We are writing to notify you that the owner of the project (<strong>${studentName || 'the developer'}</strong>) has removed their project showcase from Project Vault.</p>
+          
+          <div class="project-box">
+            <div class="project-label">Removed Project</div>
+            <div class="project-title">${projectName}</div>
+            <p class="notice-text">
+              Any collaboration inquiries or pending outreach associated with this project have been archived and removed from your active showcase queue.
+            </p>
+          </div>
+
+          <p class="text">You can continue discovering other top verified student engineering projects and active candidates on the platform.</p>
+          <a href="${process.env.CLIENT_URL || 'http://localhost:5173'}/dashboard/visit-projects" class="cta-btn">Explore Verified Projects &rarr;</a>
+          
+          <div class="footer">&copy; 2026 Project Vault v2 &bull; Talent & Collaboration Ecosystem</div>
+        </div>
+      </body>
+    </html>
+  `;
+
+  await sendMail({
+    to: recruiterEmail,
+    subject: `Notice: Project "${projectName}" was removed by its developer - Project Vault`,
+    html,
+  });
+};
+
+

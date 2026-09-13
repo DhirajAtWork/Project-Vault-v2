@@ -21,9 +21,13 @@ import {
   Loader2,
   FileDown,
   FileText,
-  Building2
+  Building2,
+  Edit3,
+  KeyRound,
+  ShieldCheck,
+  X
 } from 'lucide-react';
-import { updateProfileApi, uploadAvatarApi } from '../../api/authApi';
+import { updateProfileApi, uploadAvatarApi, requestEmailChangeApi, verifyEmailChangeApi } from '../../api/authApi';
 
 const DashboardProfile = () => {
   const { user, setUser } = useOutletContext() || {};
@@ -37,6 +41,15 @@ const DashboardProfile = () => {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Email authentication modal state
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [newEmailInput, setNewEmailInput] = useState('');
+  const [emailOtpInput, setEmailOtpInput] = useState('');
+  const [emailModalStep, setEmailModalStep] = useState('input'); // 'input' | 'otp' | 'success'
+  const [emailModalLoading, setEmailModalLoading] = useState(false);
+  const [emailModalMsg, setEmailModalMsg] = useState('');
+  const [emailModalError, setEmailModalError] = useState('');
 
   const handleAvatarFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -71,6 +84,56 @@ const DashboardProfile = () => {
     } finally {
       setIsUploadingAvatar(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleRequestEmailOtp = async (e) => {
+    e.preventDefault();
+    if (!newEmailInput.trim() || !newEmailInput.includes('@')) {
+      setEmailModalError('Please enter a valid email address');
+      return;
+    }
+    setEmailModalLoading(true);
+    setEmailModalError('');
+    setEmailModalMsg('');
+    try {
+      const res = await requestEmailChangeApi(newEmailInput.trim());
+      setEmailModalMsg(res.message || `Verification code sent to ${newEmailInput.trim()}`);
+      setEmailModalStep('otp');
+    } catch (err) {
+      setEmailModalError(err.message || 'Failed to send verification code');
+    } finally {
+      setEmailModalLoading(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async (e) => {
+    e.preventDefault();
+    if (!emailOtpInput.trim() || emailOtpInput.trim().length !== 6) {
+      setEmailModalError('Please enter the 6-digit verification code');
+      return;
+    }
+    setEmailModalLoading(true);
+    setEmailModalError('');
+    try {
+      const res = await verifyEmailChangeApi(newEmailInput.trim(), emailOtpInput.trim());
+      setFormData((prev) => ({ ...prev, email: newEmailInput.trim() }));
+      if (setUser && res.user) {
+        setUser(res.user);
+      }
+      setEmailModalStep('success');
+      setEmailModalMsg('Email successfully verified and updated!');
+      setTimeout(() => {
+        setShowEmailModal(false);
+        setEmailModalStep('input');
+        setNewEmailInput('');
+        setEmailOtpInput('');
+        setEmailModalMsg('');
+      }, 1800);
+    } catch (err) {
+      setEmailModalError(err.message || 'Failed to verify code');
+    } finally {
+      setEmailModalLoading(false);
     }
   };
 
@@ -455,7 +518,27 @@ const DashboardProfile = () => {
               {formData.headline || (currentRole === 'recruiter' ? 'Add your recruiter headline below' : 'Add your professional headline below')}
             </p>
             <p className="text-xs text-slate-500 mt-1 flex items-center gap-2 flex-wrap">
-              <span className="truncate">{formData.email}</span>
+              <span className="truncate font-mono font-medium">{formData.email}</span>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewEmailInput('');
+                  setEmailOtpInput('');
+                  setEmailModalStep('input');
+                  setEmailModalError('');
+                  setEmailModalMsg('');
+                  setShowEmailModal(true);
+                }}
+                className={`text-[11px] font-bold ${
+                  currentRole === 'recruiter'
+                    ? 'text-purple-700 bg-purple-50 hover:bg-purple-100 border-purple-200'
+                    : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
+                } border px-2 py-0.5 rounded-md flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95`}
+                title="Edit and authenticate email address with OTP verification"
+              >
+                <Edit3 className="w-3 h-3" />
+                <span>Edit Email</span>
+              </button>
               {formData.location && <span>• {formData.location}</span>}
             </p>
           </div>
@@ -1382,6 +1465,149 @@ const DashboardProfile = () => {
 
         </div>
       </div>
+
+      {/* Email Edit & Authentication Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white border border-stone-200 rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-2 rounded-xl ${isRecruiter ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                  <ShieldCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 font-brand">Authenticate Email</h3>
+                  <p className="text-xs text-slate-500">Secure OTP verification</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEmailModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-stone-100 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {emailModalError && (
+              <div className="bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold p-3 rounded-xl">
+                {emailModalError}
+              </div>
+            )}
+
+            {emailModalMsg && (
+              <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold p-3 rounded-xl flex items-center gap-1.5">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{emailModalMsg}</span>
+              </div>
+            )}
+
+            {emailModalStep === 'input' && (
+              <form onSubmit={handleRequestEmailOtp} className="space-y-4 pt-1">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Current Registered Email</label>
+                  <div className="bg-stone-100 border border-stone-200 rounded-xl px-3.5 py-2 text-xs font-mono text-slate-600 truncate">
+                    {formData.email}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">New Email Address</label>
+                  <input
+                    type="email"
+                    required
+                    value={newEmailInput}
+                    onChange={(e) => setNewEmailInput(e.target.value)}
+                    placeholder="Enter your real email (e.g. name@gmail.com)"
+                    className="w-full bg-[#f8fafc] border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 focus:outline-none focus:border-emerald-600 transition-all"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    A 6-digit authentication code will be sent to verify you own this inbox.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowEmailModal(false)}
+                    className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-stone-100 transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={emailModalLoading}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold text-white ${
+                      isRecruiter ? 'bg-purple-600 hover:bg-purple-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                    } transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-sm active:scale-95`}
+                  >
+                    {emailModalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <KeyRound className="w-3.5 h-3.5" />}
+                    <span>Send Verification Code</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {emailModalStep === 'otp' && (
+              <form onSubmit={handleVerifyEmailOtp} className="space-y-4 pt-1">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Enter 6-Digit OTP Code</label>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    required
+                    value={emailOtpInput}
+                    onChange={(e) => setEmailOtpInput(e.target.value.replace(/\D/g, ''))}
+                    placeholder="• • • • • •"
+                    className="w-full bg-[#f8fafc] border border-slate-300 rounded-xl px-3.5 py-2.5 text-center text-lg font-mono font-black tracking-widest text-slate-900 focus:outline-none focus:border-emerald-600 transition-all"
+                  />
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 mt-1.5">
+                    <span>Sent to: <strong className="font-mono text-slate-800">{newEmailInput}</strong></span>
+                    <button
+                      type="button"
+                      onClick={() => setEmailModalStep('input')}
+                      className="text-emerald-700 hover:underline font-bold cursor-pointer"
+                    >
+                      Change
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={emailModalLoading}
+                    onClick={handleRequestEmailOtp}
+                    className="px-3.5 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-stone-100 transition-all cursor-pointer"
+                  >
+                    Resend Code
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={emailModalLoading}
+                    className={`px-4 py-2 rounded-xl text-xs font-bold text-white ${
+                      isRecruiter ? 'bg-purple-600 hover:bg-purple-700' : 'bg-emerald-600 hover:bg-emerald-700'
+                    } transition-all cursor-pointer disabled:opacity-50 flex items-center gap-1.5 shadow-sm active:scale-95`}
+                  >
+                    {emailModalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                    <span>Verify & Update Email</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {emailModalStep === 'success' && (
+              <div className="py-6 text-center space-y-2">
+                <div className="w-12 h-12 rounded-full bg-emerald-100 text-emerald-600 mx-auto flex items-center justify-center shadow-xs">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <h4 className="font-black text-slate-900 text-base">Email Successfully Updated!</h4>
+                <p className="text-xs text-slate-500 font-mono">{newEmailInput}</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );

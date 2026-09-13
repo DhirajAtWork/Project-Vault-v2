@@ -1,3 +1,5 @@
+import { getAuthHeaders } from './authApi';
+
 const API_BASE_URL = typeof window !== 'undefined' && window.location.port === '5173'
   ? 'http://localhost:5000/api/analytics'
   : '/api/analytics';
@@ -6,12 +8,11 @@ const API_BASE_URL = typeof window !== 'undefined' && window.location.port === '
  * Fetch Student Analytics (KPIs, GitHub heatmap matrix, monthly trends, and collaboration requests)
  */
 export const getStudentAnalyticsApi = async () => {
-  const response = await fetch(`${API_BASE_URL}/student`, {
+  const response = await fetch(`${API_BASE_URL}/student?_t=${Date.now()}`, {
     method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getAuthHeaders(),
     credentials: 'include',
+    cache: 'no-store',
   });
 
   const data = await response.json();
@@ -27,9 +28,7 @@ export const getStudentAnalyticsApi = async () => {
 export const updateCollaborationStatusApi = async (id, status) => {
   const response = await fetch(`${API_BASE_URL}/collaborations/${id}/status`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify({ status }),
   });
@@ -44,14 +43,12 @@ export const updateCollaborationStatusApi = async (id, status) => {
 /**
  * Send a new collaboration inquiry (Recruiter action)
  */
-export const sendCollaborationRequestApi = async ({ studentId, projectName, message }) => {
+export const sendCollaborationRequestApi = async ({ studentId, projectName, message, projectId }) => {
   const response = await fetch(`${API_BASE_URL}/collaborations`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getAuthHeaders(),
     credentials: 'include',
-    body: JSON.stringify({ studentId, projectName, message }),
+    body: JSON.stringify({ studentId, projectName, message, projectId }),
   });
 
   const data = await response.json();
@@ -65,12 +62,11 @@ export const sendCollaborationRequestApi = async ({ studentId, projectName, mess
  * Fetch Recruiter Analytics (Verified project counts, AI grade metrics, active inquiries pipeline)
  */
 export const getRecruiterAnalyticsApi = async () => {
-  const response = await fetch(`${API_BASE_URL}/recruiter`, {
+  const response = await fetch(`${API_BASE_URL}/recruiter?_t=${Date.now()}`, {
     method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getAuthHeaders(),
     credentials: 'include',
+    cache: 'no-store',
   });
 
   const data = await response.json();

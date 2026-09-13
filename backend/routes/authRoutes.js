@@ -14,7 +14,9 @@ import {
   updateUserProfile,
   uploadAvatar,
   uploadMedia,
-  logoutUser
+  logoutUser,
+  requestEmailChange,
+  verifyEmailChange
 } from '../controllers/authController.js';
 import { protect } from '../middleware/authMiddleware.js';
 import { uploadSingleAvatar, uploadSingleMedia } from '../middleware/multerMiddleware.js';
@@ -40,6 +42,8 @@ router.post('/login', validateLogin, loginUser);
 router.post('/logout', logoutUser);
 router.get('/me', protect, getCurrentUser);
 router.put('/profile', protect, updateUserProfile);
+router.post('/request-email-change', protect, requestEmailChange);
+router.post('/verify-email-change', protect, verifyEmailChange);
 router.post('/upload-avatar', protect, uploadSingleAvatar, uploadAvatar);
 router.post('/upload-media', protect, uploadSingleMedia, uploadMedia);
 

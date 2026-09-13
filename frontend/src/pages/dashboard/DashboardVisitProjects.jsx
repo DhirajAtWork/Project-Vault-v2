@@ -22,7 +22,7 @@ import {
   Check
 } from 'lucide-react';
 import { getAllProjectsApi } from '../../api/projectApi';
-import { sendCollaborationRequestApi } from '../../api/analyticsApi';
+import { sendCollaborationRequestApi, getRecruiterAnalyticsApi } from '../../api/analyticsApi';
 
 /**
  * Recruiter Visit Projects Catalog
@@ -38,13 +38,21 @@ const DashboardVisitProjects = () => {
   const [inquiryType, setInquiryType] = useState('interview');
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState([]);
+  const [myInquiries, setMyInquiries] = useState([]);
 
   const fetchCatalog = async () => {
     setLoading(true);
     try {
-      const res = await getAllProjectsApi({ search: searchQuery });
-      if (res.success && res.projects) {
-        setProjects(res.projects);
+      const [projectsRes, analyticsRes] = await Promise.allSettled([
+        getAllProjectsApi({ search: searchQuery }),
+        getRecruiterAnalyticsApi(),
+      ]);
+
+      if (projectsRes.status === 'fulfilled' && projectsRes.value?.success && projectsRes.value?.projects) {
+        setProjects(projectsRes.value.projects);
+      }
+      if (analyticsRes.status === 'fulfilled' && analyticsRes.value?.success && analyticsRes.value?.recruiter?.inquiries) {
+        setMyInquiries(analyticsRes.value.recruiter.inquiries);
       }
     } catch (err) {
       console.error('Failed to load projects catalog:', err);
@@ -57,14 +65,55 @@ const DashboardVisitProjects = () => {
     fetchCatalog();
   }, [searchQuery]);
 
-  const filteredProjects = projects.filter((project) => {
-    const devName = project.student?.name || project.developer || '';
-    const matchesSearch = 
-      project.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      devName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (Array.isArray(project.tags) && project.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
-    return matchesSearch;
-  });
+  // Check if current recruiter has already initiated collaboration on this project
+  const isProjectCollaborated = (project) => {
+    if (!myInquiries || !Array.isArray(myInquiries) || myInquiries.length === 0) {
+      return false;
+    }
+    const projId = String(project._id || project.id || '');
+    const projTitle = (project.title || '').trim().toLowerCase();
+    const projStudentId = String(project.student?._id || project.student || '');
+
+    return myInquiries.some((inq) => {
+      // 1. Direct projectId match if populated
+      const inqProjId = String(inq.projectId?._id || inq.projectId || '');
+      if (projId && inqProjId && inqProjId === projId) {
+        return true;
+      }
+
+      // 2. Project title + student match
+      const inqTitle = (inq.projectName || '').trim().toLowerCase();
+      if (projTitle && inqTitle && projTitle === inqTitle) {
+        const inqStudentId = String(inq.student?._id || inq.student || '');
+        if (projStudentId && inqStudentId) {
+          return projStudentId === inqStudentId;
+        }
+        return true;
+      }
+
+      return false;
+    });
+  };
+
+  // Filter projects by search, then sort so that already collaborated projects are displayed at the last
+  const filteredProjects = projects
+    .filter((project) => {
+      const devName = project.student?.name || project.developer || '';
+      const matchesSearch = 
+        project.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        devName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (Array.isArray(project.tags) && project.tags.some((t) => t.toLowerCase().includes(searchQuery.toLowerCase())));
+      return matchesSearch;
+    })
+    .sort((a, b) => {
+      const aCollab = isProjectCollaborated(a);
+      const bCollab = isProjectCollaborated(b);
+
+      // Already collaborated projects must be displayed at the end
+      if (aCollab && !bCollab) return 1;
+      if (!aCollab && bCollab) return -1;
+      return 0;
+    });
 
   const handleOpenCollaborate = (project) => {
     setSelectedProject(project);
@@ -82,17 +131,31 @@ const DashboardVisitProjects = () => {
     try {
       setSendingInquiry(true);
       const studentId = selectedProject.student?._id || selectedProject.student;
+      const projId = selectedProject._id || selectedProject.id;
       await sendCollaborationRequestApi({
         studentId,
+        projectId: projId,
         projectName: selectedProject.title,
         message: inquiryMessage.trim(),
       });
+
+      // Instantly mark as collaborated in state so button flips and item moves to the last
+      setMyInquiries((prev) => [
+        {
+          projectId: projId,
+          projectName: selectedProject.title,
+          student: { _id: studentId, name: selectedProject.student?.name },
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
 
       setInquirySent(true);
       setTimeout(() => {
         setInquirySent(false);
         setSelectedProject(null);
-      }, 2200);
+      }, 2000);
     } catch (err) {
       alert(err.message || 'Failed to dispatch collaboration request');
     } finally {
@@ -156,17 +219,26 @@ const DashboardVisitProjects = () => {
                     {project.category || 'Computer Science'}
                   </span>
 
-                  {project.grade && project.score !== null ? (
-                    <span className="bg-purple-600/90 backdrop-blur-md text-white border border-purple-400/40 text-[11px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-md">
-                      <Sparkles className="w-3 h-3 text-purple-200" />
-                      <span>Grade {project.grade} ({project.score}/100)</span>
-                    </span>
-                  ) : (
-                    <span className="bg-amber-500/90 backdrop-blur-md text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      <span>AI Grade Pending</span>
-                    </span>
-                  )}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {isProjectCollaborated(project) && (
+                      <span className="bg-purple-900/90 backdrop-blur-md text-purple-200 border border-purple-400/40 text-[10px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-sm">
+                        <Check className="w-3 h-3 text-purple-300" />
+                        <span>Collaborated</span>
+                      </span>
+                    )}
+
+                    {project.grade && project.score !== null ? (
+                      <span className="bg-purple-600/90 backdrop-blur-md text-white border border-purple-400/40 text-[11px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-md">
+                        <Sparkles className="w-3 h-3 text-purple-200" />
+                        <span>Grade {project.grade} ({project.score}/100)</span>
+                      </span>
+                    ) : (
+                      <span className="bg-amber-500/90 backdrop-blur-md text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        <span>AI Grade Pending</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {project.executableFile?.url && (
@@ -209,7 +281,7 @@ const DashboardVisitProjects = () => {
               </div>
             </div>
 
-            {/* Card Footer Controls: View Project + Collaborate Only */}
+            {/* Card Footer Controls: View Project + Collaborate / Already Collaborated */}
             <div className="pt-4 border-t border-stone-100 flex items-center justify-between gap-2.5 sm:gap-3 flex-wrap sm:flex-nowrap">
               <Link
                 to={`/project/view-project/${project._id || project.id}?role=recruiter`}
@@ -220,14 +292,26 @@ const DashboardVisitProjects = () => {
                 <span>View Project</span>
               </Link>
 
-              <button
-                type="button"
-                onClick={() => handleOpenCollaborate(project)}
-                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-extrabold px-3.5 sm:px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-purple-900/20 active:scale-95"
-              >
-                <Handshake className="w-4 h-4" />
-                <span>Collaborate</span>
-              </button>
+              {isProjectCollaborated(project) ? (
+                <button
+                  type="button"
+                  disabled
+                  className="bg-purple-50 text-purple-700 border border-purple-200/90 text-xs font-bold px-3 sm:px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 cursor-not-allowed opacity-90 select-none shadow-2xs"
+                  title="You have already initiated collaboration on this project"
+                >
+                  <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
+                  <span>Already Collaborated</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleOpenCollaborate(project)}
+                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-extrabold px-3.5 sm:px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-purple-900/20 active:scale-95"
+                >
+                  <Handshake className="w-4 h-4" />
+                  <span>Collaborate</span>
+                </button>
+              )}
             </div>
           </div>
         ))}

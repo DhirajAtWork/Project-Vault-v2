@@ -13,16 +13,15 @@ import {
   Clock,
   ExternalLink,
   MessageSquare,
-  Building2,
   Flame,
   Award,
   ArrowUpRight,
   Filter,
   RefreshCw,
-  Search,
   Check,
   X,
-  CalendarDays
+  CalendarDays,
+  Building2
 } from 'lucide-react';
 import { getStudentAnalyticsApi, updateCollaborationStatusApi } from '../../api/analyticsApi';
 
@@ -61,6 +60,18 @@ const DashboardAnalytics = () => {
 
   useEffect(() => {
     fetchAnalytics();
+
+    const handleFocus = () => {
+      fetchAnalytics();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('visibilitychange', handleFocus);
+    };
   }, []);
 
   // Handle status update for recruiter collaboration inquiries
@@ -157,8 +168,6 @@ const DashboardAnalytics = () => {
   const kpis = analyticsData?.kpis || {};
   const streaks = analyticsData?.streaks || {};
   const monthlyTrends = analyticsData?.monthlyTrends || [];
-  const topSearchSkills = analyticsData?.topSearchSkills || [];
-  const recruiterIndustries = analyticsData?.recruiterIndustries || [];
 
   return (
     <div className="space-y-8 max-w-7xl mx-auto pb-16 font-sans">
@@ -235,24 +244,26 @@ const DashboardAnalytics = () => {
           </p>
         </div>
 
-        {/* Card 2: Total Profile Views */}
+        {/* Card 2: Recruiter Profile Views */}
         <div className="bg-white border border-stone-200/90 rounded-2xl p-5 shadow-xs hover:shadow-md transition-all">
           <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Profile Views</span>
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Recruiter Profile Views</span>
             <div className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 flex items-center justify-center shadow-xs">
               <Eye className="w-4 h-4" />
             </div>
           </div>
           <div className="mt-3 flex items-baseline gap-2">
             <span className="text-2xl sm:text-3xl font-black text-slate-900 font-brand">
-              {Number(kpis.totalProfileViews ?? 0).toLocaleString()}
+              {Number(kpis.uniqueRecruiters ?? kpis.totalProfileViews ?? kpis.recruiterViews ?? 0).toLocaleString()}
             </span>
             <span className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 rounded-full">
               {kpis.profileViewsGrowth || '0%'}
             </span>
           </div>
           <p className="mt-2 text-[11px] text-slate-500">
-            {kpis.recruiterViews ?? 0} verified recruiter impressions
+            {Number(kpis.uniqueRecruiters ?? kpis.totalProfileViews ?? 0) > 0
+              ? `${kpis.uniqueRecruiters ?? kpis.totalProfileViews} unique recruiter${(kpis.uniqueRecruiters ?? kpis.totalProfileViews) > 1 ? 's' : ''} viewing profiles`
+              : 'Unique recruiters viewing your profile'}
           </p>
         </div>
 
@@ -689,63 +700,6 @@ const DashboardAnalytics = () => {
             })}
           </div>
         )}
-
-      </div>
-
-      {/* 6. Recruiter Discovery & Search Traffic Insights */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        
-        {/* Recruiter Industry Breakdown */}
-        <div className="bg-white border border-stone-200/90 rounded-3xl p-6 shadow-xs space-y-4">
-          <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-stone-100 pb-3">
-            <Building2 className="w-4 h-4 text-emerald-600" />
-            <span>Recruiter Demographics by Industry</span>
-          </h3>
-
-          <div className="space-y-3.5 pt-1">
-            {recruiterIndustries.map((item, idx) => (
-              <div key={idx} className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-semibold">
-                  <span className="text-slate-700">{item.industry}</span>
-                  <span className="font-mono font-bold text-slate-900">{item.percentage}%</span>
-                </div>
-                <div className="h-2 w-full bg-stone-100 rounded-full overflow-hidden">
-                  <div
-                    style={{ width: `${item.percentage}%` }}
-                    className="h-full bg-slate-900 rounded-full"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Top Search Skills / Keyword Traffic */}
-        <div className="bg-white border border-stone-200/90 rounded-3xl p-6 shadow-xs space-y-4">
-          <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2 border-b border-stone-100 pb-3">
-            <Search className="w-4 h-4 text-emerald-600" />
-            <span>Top Keywords Driving Profile Views</span>
-          </h3>
-
-          <div className="space-y-3 pt-1">
-            {topSearchSkills.map((item, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between p-3 rounded-xl bg-stone-50 border border-stone-200/70"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="w-6 h-6 rounded-lg bg-white border border-stone-200 text-slate-700 text-xs font-black flex items-center justify-center">
-                    {idx + 1}
-                  </span>
-                  <span className="text-xs font-bold text-slate-800">{item.skill}</span>
-                </div>
-                <span className="text-xs font-mono font-bold text-emerald-600">
-                  {item.searches} searches
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
 
       </div>
 

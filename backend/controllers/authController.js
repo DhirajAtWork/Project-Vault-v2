@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import CollaborationRequest from '../models/CollaborationRequest.js';
 import cloudinary from '../config/cloudinary.js';
 import { 
   sendOtpEmail, 
@@ -785,4 +786,170 @@ export const uploadMedia = async (req, res) => {
     });
   }
 };
+
+/**
+ * @desc    Request Email Change with OTP Authentication
+ * @route   POST /api/auth/request-email-change
+ * @access  Private
+ */
+export const requestEmailChange = async (req, res) => {
+  try {
+    const { newEmail } = req.body;
+    if (!newEmail || !newEmail.includes('@')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide a valid email address',
+      });
+    }
+
+    const normalizedEmail = newEmail.trim().toLowerCase();
+
+    // Check if new email is same as current email
+    if (normalizedEmail === req.user.email?.toLowerCase()) {
+      return res.status(400).json({
+        success: false,
+        message: 'The new email is the same as your current email address',
+      });
+    }
+
+    // Check if new email is already taken by another account
+    const existingUser = await User.findOne({
+      email: normalizedEmail,
+      _id: { $ne: req.user._id },
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'This email address is already registered to another account',
+      });
+    }
+
+    // Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    const user = await User.findById(req.user._id).select(
+      '+emailChangeOtp +emailChangeOtpExpires +emailChangeCandidate'
+    );
+    user.emailChangeCandidate = normalizedEmail;
+    user.emailChangeOtp = otp;
+    user.emailChangeOtpExpires = otpExpires;
+    await user.save();
+
+    // Send verification OTP email to the NEW email address
+    await sendOtpEmail(normalizedEmail, user.name || 'Developer', otp);
+
+    res.status(200).json({
+      success: true,
+      message: `A 6-digit verification code has been sent to ${normalizedEmail}`,
+    });
+  } catch (error) {
+    console.error('Request email change error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to initiate email change verification',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * @desc    Verify OTP and Finalize Email Change
+ * @route   POST /api/auth/verify-email-change
+ * @access  Private
+ */
+export const verifyEmailChange = async (req, res) => {
+  try {
+    const { newEmail, otp } = req.body;
+    if (!newEmail || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: 'New email address and 6-digit verification code are required',
+      });
+    }
+
+    const normalizedEmail = newEmail.trim().toLowerCase();
+    const user = await User.findById(req.user._id).select(
+      '+emailChangeOtp +emailChangeOtpExpires +emailChangeCandidate'
+    );
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User account not found',
+      });
+    }
+
+    if (
+      !user.emailChangeCandidate ||
+      user.emailChangeCandidate.toLowerCase() !== normalizedEmail
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email change session mismatch. Please request a new verification code.',
+      });
+    }
+
+    if (!user.emailChangeOtp || user.emailChangeOtp !== otp.toString().trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid 6-digit verification code provided',
+      });
+    }
+
+    if (!user.emailChangeOtpExpires || user.emailChangeOtpExpires < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Verification code has expired. Please request a new one.',
+      });
+    }
+
+    const oldEmail = user.email;
+    user.email = normalizedEmail;
+    user.isEmailVerified = true;
+    user.emailChangeCandidate = null;
+    user.emailChangeOtp = null;
+    user.emailChangeOtpExpires = null;
+    await user.save();
+
+    // Synchronize recruiterEmail in CollaborationRequest if user was recruiter
+    await CollaborationRequest.updateMany(
+      { $or: [{ recruiter: user._id }, { recruiterEmail: oldEmail }] },
+      { $set: { recruiterEmail: normalizedEmail } }
+    );
+
+    // Send fresh JWT token
+    const token = jwt.sign(
+      { id: user._id, role: user.role, accountType: user.accountType },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRE || '7d' }
+    );
+
+    const cookieOptions = {
+      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    };
+    res.cookie('token', token, cookieOptions);
+
+    const sanitizedUser = await User.findById(user._id);
+
+    res.status(200).json({
+      success: true,
+      message: 'Email address successfully verified and updated!',
+      user: sanitizedUser,
+      token,
+    });
+  } catch (error) {
+    console.error('Verify email change error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify and update email',
+      error: error.message,
+    });
+  }
+};
+
 

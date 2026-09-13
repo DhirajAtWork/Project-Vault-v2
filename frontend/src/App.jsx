@@ -11,6 +11,7 @@ import DashboardLayout from './components/dashboard/DashboardLayout';
 import DashboardHome from './pages/dashboard/DashboardHome';
 import DashboardProjects from './pages/dashboard/DashboardProjects';
 import DashboardAddProject from './pages/dashboard/DashboardAddProject';
+import DashboardEditProject from './pages/dashboard/DashboardEditProject';
 import DashboardVisitProjects from './pages/dashboard/DashboardVisitProjects';
 import DashboardProfile from './pages/dashboard/DashboardProfile';
 import DashboardAnalytics from './pages/dashboard/DashboardAnalytics';
@@ -58,6 +59,18 @@ const router = createBrowserRouter([
   {
     path: '/add-project',
     element: <DashboardAddProject />,
+  },
+  {
+    path: '/projects/edit-project/:id',
+    element: <DashboardEditProject />,
+  },
+  {
+    path: '/projects/edit/:id',
+    element: <DashboardEditProject />,
+  },
+  {
+    path: '/dashboard/projects/edit/:id',
+    element: <DashboardEditProject />,
   },
   {
     path: '/project/view-project/:id',

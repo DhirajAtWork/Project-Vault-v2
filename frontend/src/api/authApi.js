@@ -3,6 +3,18 @@ const API_BASE_URL = typeof window !== 'undefined' && window.location.port === '
   : '/api/auth';
 
 /**
+ * Common Authorization & Content-Type Headers helper
+ */
+export const getAuthHeaders = (customHeaders = {}) => {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('vault_token') : null;
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...customHeaders,
+  };
+};
+
+/**
  * Register new user API integration
  */
 export const registerUserApi = async (formData) => {
@@ -19,6 +31,9 @@ export const registerUserApi = async (formData) => {
   if (!response.ok) {
     const errorMsg = data.errors?.[0]?.message || data.message || 'Registration failed';
     throw new Error(errorMsg);
+  }
+  if (data.token && typeof window !== 'undefined') {
+    localStorage.setItem('vault_token', data.token);
   }
   return data;
 };
@@ -120,6 +135,9 @@ export const loginUserApi = async (credentials) => {
   if (!response.ok) {
     throw new Error(data.message || 'Invalid credentials');
   }
+  if (data.token && typeof window !== 'undefined') {
+    localStorage.setItem('vault_token', data.token);
+  }
   return data;
 };
 
@@ -140,6 +158,9 @@ export const googleAuthApi = async (googlePayload) => {
   if (!response.ok) {
     throw new Error(data.message || 'Google authentication failed');
   }
+  if (data.token && typeof window !== 'undefined') {
+    localStorage.setItem('vault_token', data.token);
+  }
   return data;
 };
 
@@ -159,6 +180,9 @@ export const githubAuthApi = async (githubPayload) => {
   const data = await response.json();
   if (!response.ok) {
     throw new Error(data.message || 'GitHub authentication failed');
+  }
+  if (data.token && typeof window !== 'undefined') {
+    localStorage.setItem('vault_token', data.token);
   }
   return data;
 };
@@ -181,9 +205,11 @@ export const triggerPassportGithubAuth = () => {
  * Fetch Current Authenticated User Profile
  */
 export const getCurrentUserApi = async () => {
-  const response = await fetch(`${API_BASE_URL}/me`, {
+  const response = await fetch(`${API_BASE_URL}/me?_t=${Date.now()}`, {
     method: 'GET',
+    headers: getAuthHeaders(),
     credentials: 'include',
+    cache: 'no-store',
   });
 
   const data = await response.json();
@@ -197,8 +223,13 @@ export const getCurrentUserApi = async () => {
  * Log out user session
  */
 export const logoutUserApi = async () => {
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('vault_token');
+    localStorage.removeItem('vault_role');
+  }
   const response = await fetch(`${API_BASE_URL}/logout`, {
     method: 'POST',
+    headers: getAuthHeaders(),
     credentials: 'include',
   });
 
@@ -215,9 +246,7 @@ export const logoutUserApi = async () => {
 export const updateProfileApi = async (profileData) => {
   const response = await fetch(`${API_BASE_URL}/profile`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    headers: getAuthHeaders(),
     credentials: 'include',
     body: JSON.stringify(profileData),
   });
@@ -269,3 +298,44 @@ export const uploadMediaApi = async (file) => {
   return data;
 };
 
+/**
+ * Request OTP code to authenticate a new email address
+ */
+export const requestEmailChangeApi = async (newEmail) => {
+  const response = await fetch(`${API_BASE_URL}/request-email-change`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+    body: JSON.stringify({ newEmail }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to send verification code');
+  }
+  return data;
+};
+
+/**
+ * Verify OTP and authenticate the new email address
+ */
+export const verifyEmailChangeApi = async (newEmail, otp) => {
+  const response = await fetch(`${API_BASE_URL}/verify-email-change`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    credentials: 'include',
+    body: JSON.stringify({ newEmail, otp }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    throw new Error(data.message || 'Failed to verify and update email');
+  }
+  if (data.token && typeof window !== 'undefined') {
+    localStorage.setItem('vault_token', data.token);
+  }
+  if (data.user && typeof window !== 'undefined') {
+    localStorage.setItem('user', JSON.stringify(data.user));
+  }
+  return data;
+};

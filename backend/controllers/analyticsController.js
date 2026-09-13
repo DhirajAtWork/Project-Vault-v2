@@ -4,6 +4,10 @@ import ActivityLog from '../models/ActivityLog.js';
 import ProfileView from '../models/ProfileView.js';
 import CollaborationRequest from '../models/CollaborationRequest.js';
 import User from '../models/User.js';
+import {
+  sendCollaborationInquiryEmail,
+  sendCollaborationAcceptedEmail,
+} from '../utils/sendEmail.js';
 
 /**
  * @route   GET /api/analytics/student
@@ -15,7 +19,10 @@ export const getStudentAnalytics = async (req, res) => {
     const studentId = req.user._id;
 
     // 1. DYNAMIC KPI: Total Projects owned by student
-    const totalProjects = await Project.countDocuments({ student: studentId });
+    const activeProjects = await Project.find({ student: studentId }).select('_id title');
+    const totalProjects = activeProjects.length;
+    const activeProjectIds = activeProjects.map((p) => p._id);
+    const activeProjectTitles = activeProjects.map((p) => p.title);
 
     // 2. DYNAMIC KPI: Project Bookmarks and Total Project Views across student's projects
     const projectAggregation = await Project.aggregate([
@@ -31,38 +38,68 @@ export const getStudentAnalytics = async (req, res) => {
     const totalBookmarks = projectAggregation[0]?.totalBookmarks || 0;
     const totalProjectViews = projectAggregation[0]?.totalProjectViews || 0;
 
-    // 3. DYNAMIC KPI: Profile Views & Recruiter Views from ProfileView collection
-    const totalProfileViews = await ProfileView.countDocuments({ student: studentId });
-    const recruiterViews = await ProfileView.countDocuments({
-      student: studentId,
-      viewerRole: 'recruiter',
-    });
+    // 3. DYNAMIC KPI: Unique Recruiter Profile Views from ProfileView collection
+    let uniqueRecruiters = 0;
+    let totalRecruiterVisits = 0;
+    let profileViewsGrowth = '0%';
+    let collaborations = [];
+    let totalCollaborationRequests = 0;
 
-    // Calculate views in the last 30 days vs previous 30 days for growth rate
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+    if (totalProjects > 0) {
+      const uniqueRecruiterIds = await ProfileView.distinct('viewer', {
+        student: studentId,
+        viewerRole: 'recruiter',
+        viewer: { $ne: null },
+      });
+      uniqueRecruiters = uniqueRecruiterIds.length;
 
-    const viewsLast30 = await ProfileView.countDocuments({
-      student: studentId,
-      createdAt: { $gte: thirtyDaysAgo },
-    });
-    const viewsPrior30 = await ProfileView.countDocuments({
-      student: studentId,
-      createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo },
-    });
+      // Total raw recruiter view impressions
+      totalRecruiterVisits = await ProfileView.countDocuments({
+        student: studentId,
+        viewerRole: 'recruiter',
+      });
 
-    let profileViewsGrowth = '+15.2%';
-    if (viewsPrior30 > 0) {
-      const growthNum = ((viewsLast30 - viewsPrior30) / viewsPrior30) * 100;
-      profileViewsGrowth = `${growthNum >= 0 ? '+' : ''}${growthNum.toFixed(1)}%`;
+      // Calculate unique recruiter visits in the last 30 days vs previous 30 days for growth rate
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
+
+      const uniqueRecruitersLast30 = (
+        await ProfileView.distinct('viewer', {
+          student: studentId,
+          viewerRole: 'recruiter',
+          viewer: { $ne: null },
+          createdAt: { $gte: thirtyDaysAgo },
+        })
+      ).length;
+
+      const uniqueRecruitersPrior30 = (
+        await ProfileView.distinct('viewer', {
+          student: studentId,
+          viewerRole: 'recruiter',
+          viewer: { $ne: null },
+          createdAt: { $gte: sixtyDaysAgo, $lt: thirtyDaysAgo },
+        })
+      ).length;
+
+      if (uniqueRecruitersPrior30 > 0) {
+        const growthNum = ((uniqueRecruitersLast30 - uniqueRecruitersPrior30) / uniqueRecruitersPrior30) * 100;
+        profileViewsGrowth = `${growthNum >= 0 ? '+' : ''}${growthNum.toFixed(1)}%`;
+      } else if (uniqueRecruitersLast30 > 0) {
+        profileViewsGrowth = `+100%`;
+      }
+
+      // 4. DYNAMIC KPI: Collaboration requests strictly for student's active projects
+      collaborations = await CollaborationRequest.find({
+        student: studentId,
+        $or: [
+          { projectId: { $in: activeProjectIds } },
+          { projectName: { $in: activeProjectTitles } },
+        ],
+      }).sort({ createdAt: -1 });
+
+      totalCollaborationRequests = collaborations.length;
     }
-
-    // 4. DYNAMIC KPI: Collaboration requests from CollaborationRequest collection
-    const collaborations = await CollaborationRequest.find({ student: studentId }).sort({
-      createdAt: -1,
-    });
-    const totalCollaborationRequests = collaborations.length;
 
     // 5. DYNAMIC 365-DAY GITHUB HEATMAP: Aggregated from ActivityLog collection
     const activityByDate = await ActivityLog.aggregate([
@@ -270,12 +307,16 @@ export const getStudentAnalytics = async (req, res) => {
       analytics: {
         kpis: {
           totalProjects,
-          totalProfileViews: totalProfileViews + totalProjectViews,
-          recruiterViews,
+          uniqueRecruiters,
+          totalProfileViews: uniqueRecruiters, // Displays unique recruiters viewing profiles
+          recruiterViews: uniqueRecruiters,
+          totalRecruiterVisits,
           totalCollaborationRequests,
           projectBookmarks: totalBookmarks,
           profileViewsGrowth,
-          recruiterInterestRate: `${Math.round((recruiterViews / (totalProfileViews || 1)) * 100)}%`,
+          recruiterInterestRate: uniqueRecruiters > 0
+            ? `${Math.min(100, Math.round((totalCollaborationRequests / uniqueRecruiters) * 100))}%`
+            : '0%',
         },
         streaks: {
           totalYearlyContributions,
@@ -343,6 +384,25 @@ export const updateCollaborationStatus = async (req, res) => {
       { upsert: true, new: true }
     );
 
+    // When student accepts, send notification email to the recruiter on the recruiter's email address
+    if (status === 'accepted') {
+      const recruiterTargetEmail =
+        collaboration.recruiterEmail || (await User.findById(collaboration.recruiter))?.email;
+
+      if (recruiterTargetEmail) {
+        sendCollaborationAcceptedEmail({
+          recruiterEmail: recruiterTargetEmail,
+          recruiterName: collaboration.recruiterName || 'Recruiter',
+          studentName: req.user.name || 'Student Developer',
+          studentEmail: req.user.email,
+          studentHeadline: req.user.headline || '',
+          projectName: collaboration.projectName || 'Project Showcase',
+        }).catch((err) =>
+          console.error('Failed to send collaboration accepted email to recruiter:', err.message)
+        );
+      }
+    }
+
     res.status(200).json({
       success: true,
       message: `Collaboration request marked as ${status}`,
@@ -365,7 +425,7 @@ export const updateCollaborationStatus = async (req, res) => {
  */
 export const createCollaborationRequest = async (req, res) => {
   try {
-    const { studentId, projectName, message } = req.body;
+    const { studentId, projectName, message, projectId } = req.body;
 
     if (!studentId || !message) {
       return res.status(400).json({
@@ -384,6 +444,7 @@ export const createCollaborationRequest = async (req, res) => {
 
     const newRequest = await CollaborationRequest.create({
       student: studentId,
+      projectId: projectId || null,
       recruiter: req.user._id,
       recruiterName: req.user.name || 'Verified Recruiter',
       recruiterCompany: req.user.company || req.user.headline || 'Talent Acquisition Team',
@@ -403,6 +464,21 @@ export const createCollaborationRequest = async (req, res) => {
       viewerCompany: req.user.company || req.user.headline || 'Talent Acquisition',
       industry: 'Big Tech & Startups',
     });
+
+    // When recruiter sends collaboration request, dispatch notification email to the student
+    if (studentUser.email) {
+      sendCollaborationInquiryEmail({
+        studentEmail: studentUser.email,
+        studentName: studentUser.name || 'Student Developer',
+        recruiterName: req.user.name || 'Verified Recruiter',
+        recruiterCompany: req.user.company || req.user.headline || 'Talent Acquisition Team',
+        recruiterRole: req.user.headline || 'Technical Recruiter',
+        projectName: projectName || 'General Portfolio Showcase',
+        message,
+      }).catch((err) =>
+        console.error('Failed to send collaboration inquiry email to student:', err.message)
+      );
+    }
 
     res.status(201).json({
       success: true,
@@ -438,13 +514,14 @@ export const getRecruiterAnalytics = async (req, res) => {
 
     // 3. DYNAMIC KPI: Projects with executable binaries (.exe)
     const executableProjectsCount = await Project.countDocuments({
-      hasExecutable: true,
+      $or: [{ hasExecutable: true }, { 'executableFile.url': { $exists: true, $ne: '' } }],
     });
 
     const inquiries = await CollaborationRequest.find({
       $or: [{ recruiter: recruiterId }, { recruiterEmail: req.user.email }],
     })
       .populate('student', 'name email avatar headline location phone')
+      .populate('projectId', 'title')
       .sort({ createdAt: -1 });
 
     const totalOutreach = inquiries.length;

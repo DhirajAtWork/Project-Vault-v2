@@ -38,10 +38,21 @@ app.use(
   cors({
     origin: true, // Allow requests from any origin (e.g. localhost:5173 or localhost:5000)
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'Pragma'],
   })
 );
+
+// Disable caching for API responses to prevent stale data on dynamic navigation
+app.use('/api', (req, res, next) => {
+  res.set({
+    'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+    'Pragma': 'no-cache',
+    'Expires': '0',
+    'Surrogate-Control': 'no-store'
+  });
+  next();
+});
 
 // 6. System Health Check Endpoint
 app.get('/api/health', (req, res) => {

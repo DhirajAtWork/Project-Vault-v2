@@ -529,7 +529,20 @@ export const githubAuth = async (req, res) => {
  * @access  Public
  */
 export const passportOAuthSuccess = (req, res) => {
-  const clientUrl = process.env.CLIENT_URL || 'http://localhost:5000';
+  const stateOrigin = req.query?.state;
+  let clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+  if (stateOrigin && (
+    stateOrigin.startsWith('http://localhost:') || 
+    stateOrigin.startsWith('http://127.0.0.1:') ||
+    stateOrigin.startsWith('https://')
+  )) {
+    try {
+      const parsed = new URL(stateOrigin);
+      clientUrl = parsed.origin;
+    } catch {
+      // Keep default clientUrl
+    }
+  }
 
   if (!req.user) {
     return res.redirect(`${clientUrl}/signin?error=oauth_failed`);
@@ -547,9 +560,9 @@ export const passportOAuthSuccess = (req, res) => {
   };
 
   res.cookie('token', token, cookieOptions);
-  const redirectTarget = req.user.roleSelected === false
-    ? `${clientUrl}/dashboard?onboarding=select-role`
-    : `${clientUrl}/dashboard`;
+
+  const onboardingParam = req.user.roleSelected === false ? '&onboarding=select-role' : '';
+  const redirectTarget = `${clientUrl}/dashboard?token=${token}${onboardingParam}`;
   return res.redirect(redirectTarget);
 };
 
@@ -1008,7 +1021,7 @@ export const updateAccountType = async (req, res) => {
     };
     res.cookie('token', token, cookieOptions);
 
-    const safeUser = removeSensitiveFields(user);
+    const safeUser = await User.findById(user._id).select('-password');
 
     return res.status(200).json({
       success: true,

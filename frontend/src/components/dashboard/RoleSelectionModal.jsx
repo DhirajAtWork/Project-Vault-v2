@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   GraduationCap, 
   Briefcase, 
@@ -22,6 +22,12 @@ const RoleSelectionModal = ({ isOpen, user, onRoleSelected }) => {
   const [selectedRole, setSelectedRole] = useState(user?.accountType === 'recruiter' ? 'recruiter' : 'student');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (user?.accountType) {
+      setSelectedRole(user.accountType === 'recruiter' ? 'recruiter' : 'student');
+    }
+  }, [user]);
 
   if (!isOpen) return null;
 

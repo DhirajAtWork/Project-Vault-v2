@@ -39,6 +39,7 @@ export const getStudentAnalytics = async (req, res) => {
     const totalProjectViews = projectAggregation[0]?.totalProjectViews || 0;
 
     // 3. DYNAMIC KPI: Unique Recruiter Profile Views from ProfileView collection
+    const now = new Date();
     let uniqueRecruiters = 0;
     let totalRecruiterVisits = 0;
     let profileViewsGrowth = '0%';
@@ -60,7 +61,6 @@ export const getStudentAnalytics = async (req, res) => {
       });
 
       // Calculate unique recruiter visits in the last 30 days vs previous 30 days for growth rate
-      const now = new Date();
       const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 

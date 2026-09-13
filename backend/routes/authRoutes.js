@@ -52,20 +52,48 @@ router.post('/upload-media', protect, uploadSingleMedia, uploadMedia);
 /**
  * 2. Passport.js Google OAuth Routes
  */
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email'], session: false }));
+router.get('/google', (req, res, next) => {
+  const origin = req.query.origin || '';
+  passport.authenticate('google', { 
+    scope: ['profile', 'email'], 
+    session: false,
+    state: origin 
+  })(req, res, next);
+});
+
 router.get(
   '/google/callback',
-  passport.authenticate('google', { failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:5000'}/signin?error=google_failed`, session: false }),
+  (req, res, next) => {
+    const origin = req.query?.state || process.env.CLIENT_URL || 'http://localhost:5173';
+    passport.authenticate('google', { 
+      failureRedirect: `${origin}/signin?error=google_failed`, 
+      session: false 
+    })(req, res, next);
+  },
   passportOAuthSuccess
 );
 
 /**
  * 3. Passport.js GitHub OAuth Routes
  */
-router.get('/github', passport.authenticate('github', { scope: ['user:email'], session: false }));
+router.get('/github', (req, res, next) => {
+  const origin = req.query.origin || '';
+  passport.authenticate('github', { 
+    scope: ['user:email'], 
+    session: false,
+    state: origin 
+  })(req, res, next);
+});
+
 router.get(
   '/github/callback',
-  passport.authenticate('github', { failureRedirect: `${process.env.CLIENT_URL || 'http://localhost:5000'}/signin?error=github_failed`, session: false }),
+  (req, res, next) => {
+    const origin = req.query?.state || process.env.CLIENT_URL || 'http://localhost:5173';
+    passport.authenticate('github', { 
+      failureRedirect: `${origin}/signin?error=github_failed`, 
+      session: false 
+    })(req, res, next);
+  },
   passportOAuthSuccess
 );
 

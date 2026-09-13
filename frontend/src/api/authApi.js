@@ -191,14 +191,16 @@ export const githubAuthApi = async (githubPayload) => {
  * Trigger Passport.js Google OAuth Redirect
  */
 export const triggerPassportGoogleAuth = () => {
-  window.location.href = `${API_BASE_URL}/google`;
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  window.location.href = `${API_BASE_URL}/google${origin ? `?origin=${encodeURIComponent(origin)}` : ''}`;
 };
 
 /**
  * Trigger Passport.js GitHub OAuth Redirect
  */
 export const triggerPassportGithubAuth = () => {
-  window.location.href = `${API_BASE_URL}/github`;
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  window.location.href = `${API_BASE_URL}/github${origin ? `?origin=${encodeURIComponent(origin)}` : ''}`;
 };
 
 /**

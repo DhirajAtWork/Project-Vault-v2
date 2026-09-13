@@ -17,6 +17,19 @@ const DashboardLayout = () => {
   useEffect(() => {
     let isMounted = true;
 
+    // 1. Capture and store JWT token from OAuth redirect query params if present
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tokenFromUrl = urlParams.get('token');
+      if (tokenFromUrl) {
+        localStorage.setItem('vault_token', tokenFromUrl);
+        // Remove token from address bar for security without page reload
+        urlParams.delete('token');
+        const remainingParams = urlParams.toString() ? `?${urlParams.toString()}` : '';
+        window.history.replaceState({}, document.title, `${window.location.pathname}${remainingParams}`);
+      }
+    }
+
     const fetchUser = async () => {
       try {
         const data = await getCurrentUserApi();

@@ -398,16 +398,16 @@ const DashboardViewProject = () => {
               
               {/* Category Pills on Thumbnail */}
               <div className="absolute top-4 left-4 flex items-center gap-2 flex-wrap">
-                <span className="bg-slate-900/90 backdrop-blur-md text-white border border-white/20 text-xs font-extrabold px-3 py-1 rounded-xl shadow-md">
+                <span className="bg-black/90 text-white border border-white/20 text-xs font-extrabold px-3.5 py-1.5 rounded-full shadow-md backdrop-blur-md">
                   {project.category}
                 </span>
                 {project.subcategory && (
-                  <span className="bg-emerald-500/90 backdrop-blur-md text-slate-950 text-xs font-bold px-3 py-1 rounded-xl shadow-md">
+                  <span className="bg-emerald-500/90 text-slate-950 text-xs font-bold px-3.5 py-1.5 rounded-full shadow-md backdrop-blur-md">
                     {project.subcategory}
                   </span>
                 )}
                 {project.subdomain && (
-                  <span className="bg-white/90 backdrop-blur-md text-slate-900 text-xs font-semibold px-3 py-1 rounded-xl shadow-md hidden md:inline-block">
+                  <span className="bg-white/90 text-slate-900 text-xs font-semibold px-3.5 py-1.5 rounded-full shadow-md backdrop-blur-md hidden md:inline-block">
                     {project.subdomain}
                   </span>
                 )}
@@ -416,14 +416,14 @@ const DashboardViewProject = () => {
               {/* AI Generated Grade Badge */}
               <div className="absolute top-4 right-4">
                 {aiGrade || project.grade ? (
-                  <span className="bg-emerald-500/95 backdrop-blur-md text-slate-950 border border-emerald-300 text-xs font-black px-3.5 py-1.5 rounded-xl shadow-lg flex items-center gap-1.5 animate-fadeIn">
+                  <span className="bg-emerald-500 text-slate-950 border border-emerald-300 text-xs font-black px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-fadeIn">
                     <Sparkles className="w-3.5 h-3.5 text-slate-950" />
-                    <ShieldCheck className="w-4 h-4" />
+                    <ShieldCheck className="w-4 h-4 text-slate-950" />
                     <span>{aiGrade || project.grade} ({(healthScore !== null && healthScore !== undefined) ? healthScore : project.score}/100)</span>
                   </span>
                 ) : (
-                  <span className="bg-amber-400/95 backdrop-blur-md text-slate-950 border border-amber-300 text-xs font-black px-3.5 py-1.5 rounded-xl shadow-lg flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5 text-amber-950" />
+                  <span className="bg-amber-400 text-slate-950 border border-amber-300 text-xs font-black px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-slate-950" />
                     <span>AI Grade: Pending Evaluation</span>
                   </span>
                 )}
@@ -684,109 +684,7 @@ const DashboardViewProject = () => {
           )}
         </div>
 
-        {/* 4. ENVIRONMENT VARIABLES SECTION (RENDER HOSTING PLATFORM STYLE) - HIDDEN FOR RECRUITERS */}
-        {!isRecruiter && (
-          <div className="bg-white border border-stone-200/90 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 pb-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Key className="w-5 h-5 text-emerald-600" />
-                  <h2 className="text-lg font-black text-slate-900 tracking-tight font-brand">
-                    Environment Variables (Render.com Style)
-                  </h2>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Configure secret keys, port mappings, and connection strings required to execute and host this project.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleAddEnvVar}
-                  className="bg-stone-100 hover:bg-stone-200 text-slate-800 text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Variable</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleSaveEnv}
-                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
-                >
-                  {envSaved ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
-                  <span>{envSaved ? 'Applied to Sandbox' : 'Apply Environment'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Render-style Key-Value Rows */}
-            <div className="space-y-3">
-              {envVars.map((ev, idx) => {
-                const isVisible = visibleEnvKeys[idx];
-
-                return (
-                  <div
-                    key={idx}
-                    className="flex flex-col sm:flex-row sm:items-center gap-2.5 p-3 rounded-2xl bg-stone-50 border border-stone-200/80"
-                  >
-                    {/* Key */}
-                    <div className="flex-1 min-w-[200px]">
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">
-                        Key
-                      </label>
-                      <input
-                        type="text"
-                        value={ev.key}
-                        onChange={(e) => handleUpdateEnvVar(idx, 'key', e.target.value)}
-                        placeholder="e.g. DATABASE_URL"
-                        className="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-emerald-600 uppercase"
-                      />
-                    </div>
-
-                    {/* Value with Eye Toggle */}
-                    <div className="flex-[2] relative min-w-[260px]">
-                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">
-                        Value
-                      </label>
-                      <div className="relative">
-                        <input
-                          type={isVisible ? 'text' : 'password'}
-                          value={ev.value}
-                          onChange={(e) => handleUpdateEnvVar(idx, 'value', e.target.value)}
-                          placeholder="Secret value / connection string..."
-                          className="w-full bg-white border border-stone-300 rounded-xl pl-3 pr-10 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-emerald-600"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => toggleEnvVisibility(idx)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
-                          title={isVisible ? 'Mask Value' : 'Reveal Value'}
-                        >
-                          {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Delete Action */}
-                    <div className="self-end sm:self-center sm:pt-4">
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteEnvVar(idx)}
-                        className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                        title="Remove Variable"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* 5. RUN A PROJECT SECTION */}
+        {/* 3. RUN A PROJECT SECTION */}
         <div className="bg-white border border-stone-200/90 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 pb-4">
             <div>
@@ -1021,6 +919,108 @@ const DashboardViewProject = () => {
             </div>
           </div>
         </div>
+
+        {/* 5. ENVIRONMENT VARIABLES SECTION (RENDER HOSTING PLATFORM STYLE) - FOR DEVELOPER / OWNER ONLY */}
+        {!isRecruiter && (
+          <div className="bg-white border border-stone-200/90 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-stone-100 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Key className="w-5 h-5 text-emerald-600" />
+                  <h2 className="text-lg font-black text-slate-900 tracking-tight font-brand">
+                    Environment Variables (Render.com Style)
+                  </h2>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Configure secret keys, port mappings, and connection strings required to execute and host this project.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleAddEnvVar}
+                  className="bg-stone-100 hover:bg-stone-200 text-slate-800 text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Variable</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveEnv}
+                  className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-95"
+                >
+                  {envSaved ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                  <span>{envSaved ? 'Applied to Sandbox' : 'Apply Environment'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Render-style Key-Value Rows */}
+            <div className="space-y-3">
+              {envVars.map((ev, idx) => {
+                const isVisible = visibleEnvKeys[idx];
+
+                return (
+                  <div
+                    key={idx}
+                    className="flex flex-col sm:flex-row sm:items-center gap-2.5 p-3 rounded-2xl bg-stone-50 border border-stone-200/80"
+                  >
+                    {/* Key */}
+                    <div className="flex-1 min-w-[200px]">
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">
+                        Key
+                      </label>
+                      <input
+                        type="text"
+                        value={ev.key}
+                        onChange={(e) => handleUpdateEnvVar(idx, 'key', e.target.value)}
+                        placeholder="e.g. DATABASE_URL"
+                        className="w-full bg-white border border-stone-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-800 focus:outline-none focus:border-emerald-600 uppercase"
+                      />
+                    </div>
+
+                    {/* Value with Eye Toggle */}
+                    <div className="flex-[2] relative min-w-[260px]">
+                      <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1">
+                        Value
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={isVisible ? 'text' : 'password'}
+                          value={ev.value}
+                          onChange={(e) => handleUpdateEnvVar(idx, 'value', e.target.value)}
+                          placeholder="Secret value / connection string..."
+                          className="w-full bg-white border border-stone-300 rounded-xl pl-3 pr-10 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-emerald-600"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => toggleEnvVisibility(idx)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 cursor-pointer"
+                          title={isVisible ? 'Mask Value' : 'Reveal Value'}
+                        >
+                          {isVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Delete Action */}
+                    <div className="self-end sm:self-center sm:pt-4">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteEnvVar(idx)}
+                        className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                        title="Remove Variable"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
       </main>
     </div>

@@ -145,21 +145,39 @@ const DashboardProjects = () => {
         {projects.map((project, idx) => (
           <div
             key={project._id || project.id || idx}
-            className="bg-white border border-stone-200/90 rounded-2xl overflow-hidden shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow relative group"
+            className="bg-white border border-stone-200/80 rounded-3xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
           >
-            {/* Project Thumbnail */}
-            {project.thumbnailUrl && (
-              <div className="relative aspect-video w-full bg-stone-100 overflow-hidden border-b border-stone-100">
+            <div className="space-y-3.5">
+              {/* Thumbnail Image */}
+              <div className="w-full h-52 rounded-2xl overflow-hidden bg-slate-900 relative shadow-inner">
                 <img
-                  src={project.thumbnailUrl}
+                  src={project.thumbnailUrl || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"}
                   alt={project.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
-                <div className="absolute top-3 left-3 flex items-center gap-1.5 flex-wrap">
-                  <span className="bg-slate-900/85 backdrop-blur-xs text-white text-[11px] font-bold px-2.5 py-1 rounded-lg">
-                    {project.subdomain || project.category}
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent pointer-events-none" />
+                
+                {/* Domain & Audit Badges on Thumbnail */}
+                <div className="absolute top-3 left-3 flex flex-col items-start gap-2">
+                  <span className="bg-[#042f2e]/95 text-[#10b981] border border-[#059669]/30 text-xs font-extrabold px-3 py-1 rounded-full shadow-md backdrop-blur-md">
+                    {project.category || 'Computer Science & Engineering'}
                   </span>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {project.grade && project.score !== null ? (
+                      <span className="bg-[#9333ea] text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
+                        <Sparkles className="w-3.5 h-3.5 text-white" />
+                        <span>Grade Grade {project.grade} ({project.score}/100)</span>
+                      </span>
+                    ) : (
+                      <span className="bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
+                        <Clock className="w-3.5 h-3.5 text-slate-950" />
+                        <span>AI Grade Pending</span>
+                      </span>
+                    )}
+                  </div>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => handleDeleteProject(project._id || project.id)}
@@ -168,119 +186,60 @@ const DashboardProjects = () => {
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
-              </div>
-            )}
 
-            <div className="p-6 space-y-4 flex-1 flex flex-col justify-between">
-              <div className="space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[11px] font-extrabold text-emerald-700 uppercase tracking-wider">
-                        {project.category}
-                      </span>
-                      {project.subcategory && (
-                        <>
-                          <span className="text-stone-300 text-xs">•</span>
-                          <span className="text-[11px] font-bold text-slate-500">
-                            {project.subcategory}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                    <h3 className="font-extrabold text-slate-900 text-lg font-brand leading-snug mt-0.5">
-                      {project.title}
-                    </h3>
-                  </div>
-
-                  {!project.thumbnailUrl && (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteProject(project._id || project.id)}
-                      className="text-slate-400 hover:text-rose-600 transition-colors p-1 rounded-lg hover:bg-rose-50 cursor-pointer"
-                      title="Delete Project"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                {project.majorStack && (
-                  <div className="inline-flex items-center gap-1.5 bg-stone-100 text-slate-800 text-xs font-bold px-2.5 py-1 rounded-lg">
-                    <Layers className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Stack: {project.majorStack}</span>
-                  </div>
-                )}
-
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  {project.description}
-                </p>
-
-                {/* Tech Tags */}
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {project.tags.map((tag, idx) => (
-                    <span key={idx} className="bg-[#f8fafc] border border-stone-200 text-slate-700 text-[11px] font-medium px-2.5 py-0.5 rounded-md">
-                      {tag}
+                {project.executableFile?.url && (
+                  <div className="absolute bottom-3 left-3">
+                    <span className="bg-[#10b981] text-[#0f172a] font-black text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-md">
+                      <Binary className="w-3.5 h-3.5" />
+                      <span>.exe attached</span>
                     </span>
-                  ))}
-                </div>
-
-                {/* Run Command Terminal Box */}
-                {project.runCommand && (
-                  <div className="bg-slate-950 rounded-xl p-2.5 text-xs font-mono text-emerald-400 flex items-center justify-between gap-2 border border-slate-800">
-                    <div className="flex items-center gap-2 truncate">
-                      <Terminal className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      <span className="truncate">$ {project.runCommand}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => handleCopyRunCmd(project._id || project.id, project.runCommand)}
-                      className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer shrink-0"
-                      title="Copy Run Command"
-                    >
-                      {copiedId === (project._id || project.id) ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      ) : (
-                        <Copy className="w-3.5 h-3.5" />
-                      )}
-                    </button>
                   </div>
                 )}
               </div>
 
-              {/* Bottom Status & View Project Button */}
-              <div className="pt-4 border-t border-stone-100 flex items-center justify-between gap-3 mt-4 flex-wrap sm:flex-nowrap">
-                {(project.grade || project.score) ? (
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200/70 px-2.5 py-1 rounded-md">
-                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>{project.grade || 'Grade A+'} ({project.score}/100)</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200/70 px-2.5 py-1 rounded-md">
-                    <Clock className="w-3.5 h-3.5 text-amber-600" />
-                    <span>AI Grade Pending</span>
-                  </div>
-                )}
+              {/* Title & Author Meta */}
+              <div>
+                <h3 className="text-xl font-black text-[#9333ea] tracking-tight hover:opacity-90 transition-opacity line-clamp-1">
+                  {project.title}
+                </h3>
+                
+                <h4 className="text-slate-900 font-extrabold text-sm uppercase tracking-wide mt-1">
+                  {project.student?.name || project.developer || user?.name || 'SK TAJUDDIN'}
+                </h4>
 
-                <div className="flex items-center gap-2">
-                  <Link
-                    to={`/projects/edit-project/${project._id || project.id}`}
-                    className="bg-stone-100 hover:bg-stone-200 text-slate-800 text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-2xs border border-stone-200/80 cursor-pointer active:scale-95"
-                    title="Edit Project Details"
-                  >
-                    <Pencil className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Edit Details</span>
-                  </Link>
-
-                  <Link
-                    to={`/project/view-project/${project._id || project.id}`}
-                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>View Project</span>
-                  </Link>
-                </div>
+                <p className="text-slate-500 text-xs sm:text-sm mt-1 leading-relaxed line-clamp-2">
+                  {project.description || project.tagline || 'All Home service under one Roof'}
+                </p>
               </div>
+
+              {/* Stacks & Tech Tags */}
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                {(Array.isArray(project.tags) && project.tags.length > 0 ? project.tags : ['PHP', 'MYSQL', 'HTML', 'CSS']).slice(0, 5).map((tag, tagIdx) => (
+                  <span key={tagIdx} className="bg-[#f1f5f9] text-[#334155] font-extrabold text-xs px-3 py-1 rounded-lg uppercase tracking-wide">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Card Footer Controls: View Project + Edit Details */}
+            <div className="pt-4 border-t border-stone-100 flex items-center gap-3">
+              <Link
+                to={`/project/view-project/${project._id || project.id}`}
+                className="flex-1 bg-[#f1f5f9] hover:bg-[#e2e8f0] text-[#0f172a] text-xs sm:text-sm font-bold py-2.5 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs active:scale-95 text-center"
+              >
+                <Eye className="w-4 h-4 text-slate-600 shrink-0" />
+                <span>View Project</span>
+              </Link>
+
+              <Link
+                to={`/projects/edit-project/${project._id || project.id}`}
+                className="flex-1 border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs sm:text-sm font-bold py-2.5 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs active:scale-95 text-center"
+                title="Edit Project Details"
+              >
+                <Pencil className="w-4 h-4 text-slate-600 shrink-0" />
+                <span>Edit Details</span>
+              </Link>
             </div>
           </div>
         ))}

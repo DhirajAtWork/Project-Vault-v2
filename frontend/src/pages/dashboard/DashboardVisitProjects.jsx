@@ -201,40 +201,40 @@ const DashboardVisitProjects = () => {
         {filteredProjects.map((project) => (
           <div 
             key={project._id || project.id} 
-            className="bg-white border border-stone-200/90 rounded-3xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
+            className="bg-white border border-stone-200/80 rounded-3xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
           >
-            <div className="space-y-3">
+            <div className="space-y-3.5">
               {/* Thumbnail Image */}
-              <div className="w-full h-44 rounded-2xl overflow-hidden bg-slate-900 relative shadow-inner">
+              <div className="w-full h-52 rounded-2xl overflow-hidden bg-slate-900 relative shadow-inner">
                 <img 
                   src={project.thumbnailUrl || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"} 
                   alt={project.title} 
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 opacity-90"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 />
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent pointer-events-none" />
                 
                 {/* Domain & Audit Badges on Thumbnail */}
-                <div className="absolute top-3 left-3 right-3 flex items-center justify-between gap-1.5 flex-wrap">
-                  <span className="bg-slate-900/90 backdrop-blur-md text-emerald-400 border border-emerald-500/30 text-[10px] font-bold px-2.5 py-1 rounded-lg">
-                    {project.category || 'Computer Science'}
+                <div className="absolute top-3 left-3 flex flex-col items-start gap-2">
+                  <span className="bg-[#042f2e]/95 text-[#10b981] border border-[#059669]/30 text-xs font-extrabold px-3 py-1 rounded-full shadow-md backdrop-blur-md">
+                    {project.category || 'Computer Science & Engineering'}
                   </span>
 
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {isProjectCollaborated(project) && (
-                      <span className="bg-purple-900/90 backdrop-blur-md text-purple-200 border border-purple-400/40 text-[10px] font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-sm">
-                        <Check className="w-3 h-3 text-purple-300" />
+                      <span className="bg-[#581c87] text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
+                        <Check className="w-3.5 h-3.5 text-white" />
                         <span>Collaborated</span>
                       </span>
                     )}
 
                     {project.grade && project.score !== null ? (
-                      <span className="bg-purple-600/90 backdrop-blur-md text-white border border-purple-400/40 text-[11px] font-black px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-md">
-                        <Sparkles className="w-3 h-3 text-purple-200" />
-                        <span>Grade {project.grade} ({project.score}/100)</span>
+                      <span className="bg-[#9333ea] text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
+                        <Sparkles className="w-3.5 h-3.5 text-white" />
+                        <span>Grade Grade {project.grade} ({project.score}/100)</span>
                       </span>
                     ) : (
-                      <span className="bg-amber-500/90 backdrop-blur-md text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
+                      <span className="bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
+                        <Clock className="w-3.5 h-3.5 text-slate-950" />
                         <span>AI Grade Pending</span>
                       </span>
                     )}
@@ -242,9 +242,9 @@ const DashboardVisitProjects = () => {
                 </div>
 
                 {project.executableFile?.url && (
-                  <div className="absolute bottom-2.5 left-3">
-                    <span className="bg-emerald-500/95 backdrop-blur-md text-slate-950 font-extrabold text-[10px] px-2.5 py-0.5 rounded-md flex items-center gap-1 shadow-sm">
-                      <Binary className="w-3 h-3" />
+                  <div className="absolute bottom-3 left-3">
+                    <span className="bg-[#10b981] text-[#0f172a] font-black text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-md">
+                      <Binary className="w-3.5 h-3.5" />
                       <span>.exe attached</span>
                     </span>
                   </div>
@@ -253,28 +253,23 @@ const DashboardVisitProjects = () => {
 
               {/* Title & Author Meta */}
               <div>
-                <h3 className="font-black text-slate-900 text-base tracking-tight group-hover:text-purple-600 transition-colors line-clamp-1">
+                <h3 className="text-xl font-black text-[#9333ea] tracking-tight hover:opacity-90 transition-opacity line-clamp-1">
                   {project.title}
                 </h3>
                 
-                <div className="flex items-center gap-2 mt-1 text-xs text-slate-500 flex-wrap">
-                  <span className="font-bold text-slate-800">
-                    {project.student?.name || project.developer || 'Student Engineer'}
-                  </span>
-                  {project.student?.location && (
-                    <span className="text-slate-400">• {project.student.location}</span>
-                  )}
-                </div>
+                <h4 className="text-slate-900 font-extrabold text-sm uppercase tracking-wide mt-1">
+                  {project.student?.name || project.developer || 'SK TAJUDDIN'}
+                </h4>
+
+                <p className="text-slate-500 text-xs sm:text-sm mt-1 leading-relaxed line-clamp-2">
+                  {project.description || project.tagline || 'All Home service under one Roof'}
+                </p>
               </div>
 
-              <p className="text-xs text-slate-600 leading-relaxed line-clamp-2">
-                {project.description || project.tagline}
-              </p>
-
               {/* Stacks & Tech Tags */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {(Array.isArray(project.tags) ? project.tags : []).slice(0, 4).map((tag, tagIdx) => (
-                  <span key={tagIdx} className="bg-stone-100 text-slate-700 text-[11px] font-bold px-2.5 py-0.5 rounded-md">
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                {(Array.isArray(project.tags) && project.tags.length > 0 ? project.tags : ['PHP', 'MYSQL', 'HTML', 'CSS']).slice(0, 5).map((tag, tagIdx) => (
+                  <span key={tagIdx} className="bg-[#f1f5f9] text-[#334155] font-extrabold text-xs px-3 py-1 rounded-lg uppercase tracking-wide">
                     {tag}
                   </span>
                 ))}
@@ -282,33 +277,31 @@ const DashboardVisitProjects = () => {
             </div>
 
             {/* Card Footer Controls: View Project + Collaborate / Already Collaborated */}
-            <div className="pt-4 border-t border-stone-100 flex items-center justify-between gap-2.5 sm:gap-3 flex-wrap sm:flex-nowrap">
+            <div className="pt-4 border-t border-stone-100 flex items-center gap-3">
               <Link
                 to={`/project/view-project/${project._id || project.id}?role=recruiter`}
                 state={{ from: 'visit-projects', role: 'recruiter' }}
-                className="bg-stone-100 hover:bg-stone-200 text-slate-800 text-xs font-bold px-3.5 sm:px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs active:scale-95"
+                className="flex-1 bg-[#f1f5f9] hover:bg-[#e2e8f0] text-[#0f172a] text-xs sm:text-sm font-bold py-2.5 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs active:scale-95 text-center"
               >
-                <Eye className="w-3.5 h-3.5 text-slate-600" />
+                <Eye className="w-4 h-4 text-slate-600 shrink-0" />
                 <span>View Project</span>
               </Link>
 
               {isProjectCollaborated(project) ? (
-                <button
-                  type="button"
-                  disabled
-                  className="bg-purple-50 text-purple-700 border border-purple-200/90 text-xs font-bold px-3 sm:px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 cursor-not-allowed opacity-90 select-none shadow-2xs"
+                <div
+                  className="flex-1 border-2 border-[#d8b4fe] bg-[#faf5ff] text-[#7e22ce] text-xs sm:text-sm font-bold py-2.5 px-4 rounded-2xl flex items-center justify-center gap-2 select-none text-center"
                   title="You have already initiated collaboration on this project"
                 >
-                  <CheckCircle2 className="w-4 h-4 text-purple-600 shrink-0" />
-                  <span>Already Collaborated</span>
-                </button>
+                  <CheckCircle2 className="w-4 h-4 text-[#7e22ce] shrink-0" />
+                  <span className="truncate">Already Collaborated</span>
+                </div>
               ) : (
                 <button
                   type="button"
                   onClick={() => handleOpenCollaborate(project)}
-                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-extrabold px-3.5 sm:px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 cursor-pointer shadow-sm shadow-purple-900/20 active:scale-95"
+                  className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-extrabold py-2.5 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm shadow-purple-900/20 active:scale-95 text-center"
                 >
-                  <Handshake className="w-4 h-4" />
+                  <Handshake className="w-4 h-4 shrink-0" />
                   <span>Collaborate</span>
                 </button>
               )}

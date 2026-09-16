@@ -16,7 +16,8 @@ import {
   RefreshCw,
   Eye,
   Clock,
-  Pencil
+  Pencil,
+  Binary
 } from 'lucide-react';
 import { getMyProjectsApi, deleteProjectApi } from '../../api/projectApi';
 

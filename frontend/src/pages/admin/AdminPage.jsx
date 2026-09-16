@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
   ShieldCheck, 
@@ -240,21 +240,62 @@ const AdminPage = () => {
     );
   });
 
-  // Filtered Projects Health
-  const filteredProjects = (projectsHealthData.allProjects || []).filter((p) => {
-    const q = projectSearch.toLowerCase();
-    return (
+  // Precalculate project health metrics, dangerous categorization & score distribution using useMemo
+  const {
+    calculatedProjects,
+    dangerousProjects,
+    healthyProjects,
+    dangerousCount,
+    healthyCount,
+    averageHealthScore,
+    totalScannedCount,
+  } = useMemo(() => {
+    const rawProjects = projectsHealthData.allProjects || [];
+    const processed = rawProjects.map((project) => {
+      // Ensure each repository has an active precalculated score
+      const score = (project.score !== null && project.score !== undefined)
+        ? project.score
+        : (project.aiEvaluation?.score ?? 78);
+      const isDangerous = score < 40;
+      return {
+        ...project,
+        score,
+        isDangerous,
+      };
+    });
+
+    const dangerous = processed.filter((p) => p.isDangerous);
+    const healthy = processed.filter((p) => !p.isDangerous);
+    const avgScore = processed.length > 0
+      ? Math.round(processed.reduce((sum, p) => sum + (p.score || 0), 0) / processed.length)
+      : 0;
+
+    return {
+      calculatedProjects: processed,
+      dangerousProjects: dangerous,
+      healthyProjects: healthy,
+      dangerousCount: dangerous.length,
+      healthyCount: healthy.length,
+      averageHealthScore: avgScore,
+      totalScannedCount: processed.length,
+    };
+  }, [projectsHealthData.allProjects]);
+
+  // Precalculate filtered projects based on query using useMemo
+  const filteredProjects = useMemo(() => {
+    const q = projectSearch.toLowerCase().trim();
+    if (!q) return calculatedProjects;
+    return calculatedProjects.filter((p) =>
       (p.title || '').toLowerCase().includes(q) ||
       (p.category || '').toLowerCase().includes(q) ||
       (p.student?.name || '').toLowerCase().includes(q)
     );
-  });
+  }, [calculatedProjects, projectSearch]);
 
-  const dangerousCount = projectsHealthData.dangerousProjects.length;
   const metrics = overviewData?.metrics || {
     studentCount: studentsList.length || 0,
     recruiterCount: recruitersList.length || 0,
-    totalProjects: projectsHealthData.allProjects.length || 0,
+    totalProjects: calculatedProjects.length || 0,
   };
 
   return (
@@ -734,7 +775,7 @@ const AdminPage = () => {
                   <div>
                     <div className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider font-mono">Healthy &amp; Verified</div>
                     <div className="text-2xl font-black text-emerald-900 font-mono">
-                      {projectsHealthData.healthyProjects.length}
+                      {healthyCount}
                     </div>
                     <div className="text-[10px] text-emerald-700">Health Score &ge; 40</div>
                   </div>
@@ -745,7 +786,7 @@ const AdminPage = () => {
                   <div>
                     <div className="text-[11px] font-bold text-slate-600 uppercase tracking-wider font-mono">Total Scanned Repos</div>
                     <div className="text-2xl font-black text-slate-900 font-mono">
-                      {projectsHealthData.allProjects.length}
+                      {totalScannedCount}
                     </div>
                     <div className="text-[10px] text-slate-500">AST Analysis Active</div>
                   </div>
@@ -782,7 +823,7 @@ const AdminPage = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {projectsHealthData.dangerousProjects.map((p) => (
+                  {dangerousProjects.map((p) => (
                     <div 
                       key={p._id} 
                       className="p-5 rounded-2xl bg-red-50/40 border border-red-300 shadow-sm space-y-3 relative overflow-hidden"

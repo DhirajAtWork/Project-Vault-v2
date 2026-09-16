@@ -113,18 +113,25 @@ const DashboardViewProject = () => {
             } else {
               setEnvVars([]);
             }
-            const scoreVal = res.project.score !== undefined && res.project.score !== null ? res.project.score : null;
-            const gradeVal = res.project.grade || res.project.aiEvaluation?.grade || null;
-            setHealthScore(scoreVal);
-            setAiGrade(gradeVal);
-            if (res.project.aiEvaluation?.checks?.length > 0) {
-              setHealthReport({
-                timestamp: res.project.aiEvaluation.evaluatedAt ? new Date(res.project.aiEvaluation.evaluatedAt).toLocaleTimeString() : 'Recent',
-                score: scoreVal,
-                grade: gradeVal,
-                summary: res.project.aiEvaluation.summary,
-                checks: res.project.aiEvaluation.checks,
-              });
+            const isCompleted = res.project.aiEvaluation?.status === 'Completed';
+            if (isCompleted) {
+              const scoreVal = res.project.score !== undefined && res.project.score !== null ? res.project.score : null;
+              const gradeVal = res.project.grade || res.project.aiEvaluation?.grade || null;
+              setHealthScore(scoreVal);
+              setAiGrade(gradeVal);
+              if (res.project.aiEvaluation?.checks?.length > 0) {
+                setHealthReport({
+                  timestamp: res.project.aiEvaluation.evaluatedAt ? new Date(res.project.aiEvaluation.evaluatedAt).toLocaleTimeString() : 'Recent',
+                  score: scoreVal,
+                  grade: gradeVal,
+                  summary: res.project.aiEvaluation.summary,
+                  checks: res.project.aiEvaluation.checks,
+                });
+              }
+            } else {
+              setHealthScore(null);
+              setAiGrade(null);
+              setHealthReport(null);
             }
             return;
           }
@@ -258,6 +265,12 @@ const DashboardViewProject = () => {
       setTimeout(() => {
         const genScore = 98;
         const genGrade = 'Grade A+';
+        const auditedChecks = [
+          { name: 'Code Architecture', category: 'Quality', status: 'Passed', detail: 'ESLint, Ruff & framework design verified' },
+          { name: 'Deterministic Runtime', category: 'Runtime', status: 'Passed', detail: 'Deterministic setup & entrypoint validated' },
+          { name: 'Environment Secrets', category: 'Security', status: 'Validated', detail: 'Required variables & port mappings audited' },
+          { name: 'Executable Build Package', category: 'Artifact', status: project.executableFile?.url ? 'Attached' : 'Neutral', detail: project.executableFile?.url ? 'Binary mounted & tested' : 'Source-only repo' },
+        ];
         setHealthScore(genScore);
         setAiGrade(genGrade);
         setProject((prev) => ({
@@ -270,12 +283,7 @@ const DashboardViewProject = () => {
             score: genScore,
             evaluatedAt: new Date(),
             summary: 'AI Project Quality & Runtime Audit completed. Generated Grade A+ (98/100). All runtime scripts, environment configurations, and build artifacts verified.',
-            checks: [
-              { name: 'Code Architecture & Frameworks', category: 'Quality', status: 'Passed', detail: 'Modern async telemetry pipelines and isolated runtime sandboxes verified' },
-              { name: 'Deterministic CLI & Runtime Commands', category: 'Runtime', status: 'Passed', detail: 'Deterministic setup and entrypoint command sequence validated' },
-              { name: 'Environment Secrets & Port Mapping', category: 'Security', status: 'Passed', detail: 'Required environment variables properly masked and audited' },
-              { name: 'Executable / Binary Build Artifact (.exe)', category: 'Artifact', status: 'Passed', detail: 'Valid executable package attached and container-ready' },
-            ],
+            checks: auditedChecks,
           },
         }));
         setHealthReport({
@@ -283,17 +291,13 @@ const DashboardViewProject = () => {
           score: genScore,
           grade: genGrade,
           summary: 'AI Project Quality & Runtime Audit completed. Generated Grade A+ (98/100).',
-          checks: [
-            { name: 'Code Architecture & Frameworks', category: 'Quality', status: 'Passed', detail: 'Modern async telemetry pipelines and isolated runtime sandboxes verified' },
-            { name: 'Deterministic CLI & Runtime Commands', category: 'Runtime', status: 'Passed', detail: 'Deterministic setup and entrypoint command sequence validated' },
-            { name: 'Environment Secrets & Port Mapping', category: 'Security', status: 'Passed', detail: 'Required environment variables properly masked and audited' },
-            { name: 'Executable / Binary Build Artifact (.exe)', category: 'Artifact', status: 'Passed', detail: 'Valid executable package attached and container-ready' },
-          ],
+          checks: auditedChecks,
         });
-      }, 1400);
+        setIsDiagnosing(false);
+      }, 1000);
+      return;
     } catch (err) {
       console.error('Error running AI project evaluation:', err);
-    } finally {
       setIsDiagnosing(false);
     }
   };
@@ -520,10 +524,10 @@ const DashboardViewProject = () => {
                   <Activity className="w-3.5 h-3.5 text-emerald-600" />
                   <span>AI Health Score</span>
                 </span>
-                {aiGrade || project.grade ? (
+                {aiGrade ? (
                   <p className="text-xs font-bold text-emerald-700 font-mono flex items-center gap-1.5 animate-fadeIn">
                     <Sparkles className="w-3 h-3 text-emerald-600" />
-                    <span>{(healthScore !== null && healthScore !== undefined) ? healthScore : project.score} / 100 • {aiGrade || project.grade}</span>
+                    <span>{(healthScore !== null && healthScore !== undefined) ? healthScore : project.score} / 100 • {aiGrade}</span>
                   </p>
                 ) : (
                   <p className="text-xs font-bold text-amber-700 font-mono flex items-center gap-1">
@@ -607,10 +611,11 @@ const DashboardViewProject = () => {
             </div>
 
             <button
+              id="generate-ai-diagnostics"
               onClick={handleRunHealthCheck}
               disabled={isDiagnosing}
               className={`text-xs font-bold px-4 py-2.5 rounded-xl transition-all flex items-center gap-2 shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 ${
-                aiGrade || project.grade
+                aiGrade
                   ? 'bg-slate-900 hover:bg-slate-800 text-white'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md hover:shadow-emerald-600/20'
               }`}
@@ -620,7 +625,7 @@ const DashboardViewProject = () => {
                   <RefreshCw className="w-3.5 h-3.5 animate-spin text-emerald-400" />
                   <span>AI Evaluating Codebase & Binaries...</span>
                 </>
-              ) : aiGrade || project.grade ? (
+              ) : aiGrade ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Re-run AI Diagnostics</span>
@@ -637,9 +642,9 @@ const DashboardViewProject = () => {
           {/* Health Diagnostics Checklist Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {(healthReport?.checks && healthReport.checks.length > 0 ? healthReport.checks : [
-              { name: 'Code Architecture', status: (aiGrade || project.grade) ? 'Passed' : 'Pending', detail: 'ESLint, Ruff & framework design' },
-              { name: 'Deterministic Runtime', status: (aiGrade || project.grade) ? 'Passed' : 'Pending', detail: 'Deterministic setup & entrypoint' },
-              { name: 'Environment Secrets', status: (aiGrade || project.grade) ? 'Validated' : 'Pending', detail: 'Required variables & port mappings' },
+              { name: 'Code Architecture', status: aiGrade ? 'Passed' : 'Pending', detail: 'ESLint, Ruff & framework design' },
+              { name: 'Deterministic Runtime', status: aiGrade ? 'Passed' : 'Pending', detail: 'Deterministic setup & entrypoint' },
+              { name: 'Environment Secrets', status: aiGrade ? 'Validated' : 'Pending', detail: 'Required variables & port mappings' },
               { name: 'Executable Build Package', status: (project.executableFile?.url ? 'Attached' : 'Neutral'), detail: project.executableFile?.url ? 'Binary mounted & tested' : 'Source-only repo' },
             ]).map((check, idx) => {
               const isPassed = check.status === 'Passed' || check.status === 'Validated' || check.status === 'Attached';

@@ -25,15 +25,13 @@ import {
   Edit3,
   KeyRound,
   ShieldCheck,
-  RefreshCw,
   X
 } from 'lucide-react';
 import { 
   updateProfileApi, 
   uploadAvatarApi, 
   requestEmailChangeApi, 
-  verifyEmailChangeApi,
-  updateAccountTypeApi
+  verifyEmailChangeApi
 } from '../../api/authApi';
 
 const DashboardProfile = () => {
@@ -65,33 +63,6 @@ const DashboardProfile = () => {
   const [emailModalMsg, setEmailModalMsg] = useState('');
   const [emailModalError, setEmailModalError] = useState('');
 
-  // Account type switch modal state
-  const [showRoleModal, setShowRoleModal] = useState(false);
-  const [roleModalTarget, setRoleModalTarget] = useState('student');
-  const [roleModalLoading, setRoleModalLoading] = useState(false);
-  const [roleModalError, setRoleModalError] = useState('');
-
-  const handleSwitchAccountType = async () => {
-    setRoleModalError('');
-    setRoleModalLoading(true);
-    try {
-      const res = await updateAccountTypeApi(roleModalTarget);
-      if (res?.user) {
-        setFormData((prev) => ({ ...prev, accountType: res.user.accountType }));
-        if (setUser) {
-          setUser(res.user);
-        }
-        setSavedMsg(`Account type successfully changed to ${res.user.accountType}!`);
-        setTimeout(() => setSavedMsg(''), 4000);
-        setShowRoleModal(false);
-      }
-    } catch (err) {
-      console.error('Failed to update account type:', err);
-      setRoleModalError(err.message || 'Failed to update account type. Please try again.');
-    } finally {
-      setRoleModalLoading(false);
-    }
-  };
 
   const handleAvatarFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -553,21 +524,6 @@ const DashboardProfile = () => {
               } text-[10px] sm:text-xs font-bold px-2.5 py-0.5 rounded font-mono uppercase`}>
                 {formData.accountType}
               </span>
-              {isOAuthUser && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRoleModalTarget(formData.accountType === 'recruiter' ? 'student' : 'recruiter');
-                    setRoleModalError('');
-                    setShowRoleModal(true);
-                  }}
-                  className="text-[11px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2 py-0.5 rounded-md flex items-center gap-1 transition-all cursor-pointer shadow-2xs active:scale-95"
-                  title="Switch your account type (Student or Recruiter)"
-                >
-                  <RefreshCw className="w-3 h-3 text-slate-600" />
-                  <span>Switch to {formData.accountType === 'recruiter' ? 'Student' : 'Recruiter'}</span>
-                </button>
-              )}
             </div>
             <p className={`text-xs sm:text-sm font-semibold ${
               currentRole === 'recruiter' ? 'text-purple-700' : 'text-emerald-700'
@@ -1668,98 +1624,7 @@ const DashboardProfile = () => {
         </div>
       )}
 
-      {/* Switch Account Type Modal */}
-      {showRoleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in font-sans">
-          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden p-6">
-            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                  roleModalTarget === 'recruiter' ? 'bg-purple-100 text-purple-700' : 'bg-emerald-100 text-emerald-700'
-                }`}>
-                  <RefreshCw className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-black text-slate-900 text-base">
-                    Switch to {roleModalTarget === 'recruiter' ? 'Recruiter' : 'Student'}?
-                  </h3>
-                  <p className="text-xs text-slate-500">Change your account workspace and permissions</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowRoleModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
 
-            {roleModalError && (
-              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700">
-                {roleModalError}
-              </div>
-            )}
-
-            <div className="mt-4 space-y-3 text-xs text-slate-600 leading-relaxed">
-              <p>
-                You are currently a <strong className="uppercase font-mono text-slate-900">{formData.accountType}</strong>.
-              </p>
-              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
-                <p className="font-bold text-slate-800">
-                  Switching to {roleModalTarget === 'recruiter' ? 'Recruiter' : 'Student'} will:
-                </p>
-                {roleModalTarget === 'recruiter' ? (
-                  <ul className="list-disc list-inside space-y-1 text-slate-600">
-                    <li>Enable the "Visit Projects" tab to explore student repositories</li>
-                    <li>Allow you to send collaboration & hire inquiries to students</li>
-                    <li>Adjust your dashboard metrics to recruiter statistics</li>
-                  </ul>
-                ) : (
-                  <ul className="list-disc list-inside space-y-1 text-slate-600">
-                    <li>Enable the "Projects" tab to publish and showcase your work</li>
-                    <li>Allow you to receive collaboration requests from recruiters</li>
-                    <li>Display recruiter view analytics on your projects and profile</li>
-                  </ul>
-                )}
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2.5 mt-6 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setShowRoleModal(false)}
-                disabled={roleModalLoading}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSwitchAccountType}
-                disabled={roleModalLoading}
-                className={`px-5 py-2 rounded-xl text-xs font-bold text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95 ${
-                  roleModalTarget === 'recruiter'
-                    ? 'bg-purple-600 hover:bg-purple-700'
-                    : 'bg-emerald-600 hover:bg-emerald-700'
-                } ${roleModalLoading ? 'opacity-70 cursor-not-allowed' : ''}`}
-              >
-                {roleModalLoading ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Switching...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Confirm & Switch</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

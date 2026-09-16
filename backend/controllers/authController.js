@@ -650,9 +650,11 @@ export const updateUserProfile = async (req, res) => {
 
     if (name !== undefined) user.name = name;
     if (accountType !== undefined && ['student', 'recruiter'].includes(accountType)) {
-      user.accountType = accountType;
-      user.roleSelected = true;
-      user.roleChangesCount = (user.roleChangesCount || 0) + 1;
+      if (!user.roleSelected) {
+        user.accountType = accountType;
+        user.roleSelected = true;
+        user.roleChangesCount = (user.roleChangesCount || 0) + 1;
+      }
     }
     if (subscribeNewsletter !== undefined) user.subscribeNewsletter = Boolean(subscribeNewsletter);
     if (avatar !== undefined) user.avatar = avatar;
@@ -1004,6 +1006,14 @@ export const updateAccountType = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'User account not found',
+      });
+    }
+
+    // Role switching is strictly prohibited once initial selection has been made
+    if (user.roleSelected) {
+      return res.status(400).json({
+        success: false,
+        message: 'Account profile type is permanent and cannot be changed after initial selection.',
       });
     }
 

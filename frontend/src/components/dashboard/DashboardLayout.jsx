@@ -71,12 +71,20 @@ const DashboardLayout = () => {
     user?.authProvider === 'google'
   );
 
+  // Only OAuth users who have not yet selected their permanent profile role see the card selection prompt
   const isRolePromptOpen = Boolean(
     !roleModalDismissed &&
     user &&
     isOAuthUser &&
-    (user.roleSelected === false || location.search.includes('onboarding=select-role'))
+    user.roleSelected === false
   );
+
+  useEffect(() => {
+    // If user already has a selected permanent role, clear any stale onboarding query param
+    if (user && user.roleSelected && location.search.includes('onboarding=')) {
+      navigate(location.pathname, { replace: true });
+    }
+  }, [user, location, navigate]);
 
   const handleRoleSelected = (updatedUser) => {
     setUser(updatedUser);

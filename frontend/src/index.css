@@ -81,3 +81,26 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Responsive Card Action Button Labels: icon-only on narrow, text on wide */
+.btn-responsive-label {
+  display: none;
+}
+
+@container (min-width: 270px) {
+  .btn-responsive-label {
+    display: inline;
+  }
+}
+
+@media (min-width: 1024px) {
+  .btn-responsive-label {
+    display: inline;
+  }
+}
+
+@media (min-width: 440px) and (max-width: 639px) {
+  .btn-responsive-label {
+    display: inline;
+  }
+}

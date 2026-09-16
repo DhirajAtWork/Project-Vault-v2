@@ -126,7 +126,7 @@ const DashboardProjects = () => {
       </div>
 
       {/* Projects Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5 sm:gap-6">
         {projects.length === 0 && (
           <div className="col-span-full py-16 text-center border-2 border-dashed border-stone-200 rounded-3xl bg-stone-50/50 p-6">
             <FolderKanban className="w-12 h-12 text-stone-300 mx-auto mb-3" />
@@ -146,11 +146,11 @@ const DashboardProjects = () => {
         {projects.map((project, idx) => (
           <div
             key={project._id || project.id || idx}
-            className="bg-white border border-stone-200/80 rounded-3xl p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
+            className="@container bg-white border border-stone-200/80 rounded-3xl p-4 sm:p-5 shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-4 group"
           >
             <div className="space-y-3.5">
               {/* Thumbnail Image */}
-              <div className="w-full h-52 rounded-2xl overflow-hidden bg-slate-900 relative shadow-inner">
+              <div className="w-full h-48 sm:h-52 rounded-2xl overflow-hidden bg-slate-900 relative shadow-inner">
                 <img
                   src={project.thumbnailUrl || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80"}
                   alt={project.title}
@@ -159,19 +159,19 @@ const DashboardProjects = () => {
                 <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-transparent pointer-events-none" />
                 
                 {/* Domain & Audit Badges on Thumbnail */}
-                <div className="absolute top-3 left-3 flex flex-col items-start gap-2">
-                  <span className="bg-[#042f2e]/95 text-[#10b981] border border-[#059669]/30 text-xs font-extrabold px-3 py-1 rounded-full shadow-md backdrop-blur-md">
+                <div className="absolute top-3 left-3 flex flex-col items-start gap-1.5 sm:gap-2">
+                  <span className="bg-[#042f2e]/95 text-[#10b981] border border-[#059669]/30 text-[11px] sm:text-xs font-extrabold px-3 py-1 rounded-full shadow-md backdrop-blur-md">
                     {project.category || 'Computer Science & Engineering'}
                   </span>
 
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {project.grade && project.score !== null ? (
-                      <span className="bg-[#9333ea] text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
+                      <span className="bg-[#9333ea] text-white text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
                         <Sparkles className="w-3.5 h-3.5 text-white" />
                         <span>Grade Grade {project.grade} ({project.score}/100)</span>
                       </span>
                     ) : (
-                      <span className="bg-amber-400 text-slate-950 text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
+                      <span className="bg-amber-400 text-slate-950 text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
                         <Clock className="w-3.5 h-3.5 text-slate-950" />
                         <span>AI Grade Pending</span>
                       </span>
@@ -184,13 +184,14 @@ const DashboardProjects = () => {
                   onClick={() => handleDeleteProject(project._id || project.id)}
                   className="absolute top-3 right-3 text-white/90 bg-slate-900/75 hover:bg-rose-600 transition-colors p-1.5 rounded-xl backdrop-blur-xs shadow-md cursor-pointer"
                   title="Delete Project"
+                  aria-label="Delete Project"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
 
                 {project.executableFile?.url && (
                   <div className="absolute bottom-3 left-3">
-                    <span className="bg-[#10b981] text-[#0f172a] font-black text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-md">
+                    <span className="bg-[#10b981] text-[#0f172a] font-black text-[11px] sm:text-xs px-2.5 py-1 rounded-lg flex items-center gap-1.5 shadow-md">
                       <Binary className="w-3.5 h-3.5" />
                       <span>.exe attached</span>
                     </span>
@@ -200,11 +201,11 @@ const DashboardProjects = () => {
 
               {/* Title & Author Meta */}
               <div>
-                <h3 className="text-xl font-black text-[#9333ea] tracking-tight hover:opacity-90 transition-opacity line-clamp-1">
+                <h3 className="text-lg sm:text-xl font-black text-[#9333ea] tracking-tight hover:opacity-90 transition-opacity line-clamp-1">
                   {project.title}
                 </h3>
                 
-                <h4 className="text-slate-900 font-extrabold text-sm uppercase tracking-wide mt-1">
+                <h4 className="text-slate-900 font-extrabold text-xs sm:text-sm uppercase tracking-wide mt-1">
                   {project.student?.name || project.developer || user?.name || 'SK TAJUDDIN'}
                 </h4>
 
@@ -214,9 +215,9 @@ const DashboardProjects = () => {
               </div>
 
               {/* Stacks & Tech Tags */}
-              <div className="flex items-center gap-2 flex-wrap pt-1">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap pt-1">
                 {(Array.isArray(project.tags) && project.tags.length > 0 ? project.tags : ['PHP', 'MYSQL', 'HTML', 'CSS']).slice(0, 5).map((tag, tagIdx) => (
-                  <span key={tagIdx} className="bg-[#f1f5f9] text-[#334155] font-extrabold text-xs px-3 py-1 rounded-lg uppercase tracking-wide">
+                  <span key={tagIdx} className="bg-[#f1f5f9] text-[#334155] font-extrabold text-[11px] sm:text-xs px-2.5 sm:px-3 py-1 rounded-lg uppercase tracking-wide">
                     {tag}
                   </span>
                 ))}
@@ -224,22 +225,25 @@ const DashboardProjects = () => {
             </div>
 
             {/* Card Footer Controls: View Project + Edit Details */}
-            <div className="pt-4 border-t border-stone-100 flex items-center gap-3">
+            <div className="pt-4 border-t border-stone-100 flex items-center gap-2 sm:gap-3">
               <Link
                 to={`/project/view-project/${project._id || project.id}`}
-                className="flex-1 bg-[#f1f5f9] hover:bg-[#e2e8f0] text-[#0f172a] text-xs sm:text-sm font-bold py-2.5 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs active:scale-95 text-center"
+                className="flex-1 bg-[#f1f5f9] hover:bg-[#e2e8f0] text-[#0f172a] text-xs sm:text-sm font-bold py-2.5 px-3 sm:px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs active:scale-95 text-center min-w-0"
+                title="View Project"
+                aria-label="View Project"
               >
                 <Eye className="w-4 h-4 text-slate-600 shrink-0" />
-                <span>View Project</span>
+                <span className="btn-responsive-label">View Project</span>
               </Link>
 
               <Link
                 to={`/projects/edit-project/${project._id || project.id}`}
-                className="flex-1 border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs sm:text-sm font-bold py-2.5 px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs active:scale-95 text-center"
+                className="flex-1 border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs sm:text-sm font-bold py-2.5 px-3 sm:px-4 rounded-2xl transition-all flex items-center justify-center gap-2 cursor-pointer shadow-2xs active:scale-95 text-center min-w-0"
                 title="Edit Project Details"
+                aria-label="Edit Details"
               >
                 <Pencil className="w-4 h-4 text-slate-600 shrink-0" />
-                <span>Edit Details</span>
+                <span className="btn-responsive-label">Edit Details</span>
               </Link>
             </div>
           </div>

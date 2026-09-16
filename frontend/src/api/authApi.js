@@ -93,7 +93,10 @@ export const forgotPasswordApi = async ({ email }) => {
 
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.message || 'Password reset request failed');
+    const error = new Error(data.message || 'Password reset request failed');
+    error.isOAuthAccount = data.isOAuthAccount || false;
+    error.authProvider = data.authProvider || null;
+    throw error;
   }
   return data;
 };
@@ -113,7 +116,10 @@ export const resetPasswordApi = async ({ email, otp, newPassword, confirmPasswor
 
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.message || 'Password reset failed');
+    const error = new Error(data.message || 'Password reset failed');
+    error.isOAuthAccount = data.isOAuthAccount || false;
+    error.authProvider = data.authProvider || null;
+    throw error;
   }
   return data;
 };

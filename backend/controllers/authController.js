@@ -267,11 +267,32 @@ export const forgotPassword = async (req, res) => {
       query.accountType = accountType;
     }
 
-    const user = await User.findOne(query).sort({ createdAt: -1 });
+    const user = await User.findOne(query)
+      .select('+googleId +githubId')
+      .sort({ createdAt: -1 });
+
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'No account registered with this email address',
+      });
+    }
+
+    // Check if account was created or authenticated via OAuth (Google or GitHub)
+    if (user.isOAuthUser || user.googleId || user.githubId) {
+      const provider = (user.googleId && user.githubId)
+        ? 'Google or GitHub'
+        : user.googleId
+        ? 'Google'
+        : user.githubId
+        ? 'GitHub'
+        : 'social OAuth';
+
+      return res.status(400).json({
+        success: false,
+        isOAuthAccount: true,
+        authProvider: user.googleId ? 'google' : user.githubId ? 'github' : 'oauth',
+        message: `This account is authenticated using ${provider}. Accounts signed up with OAuth do not use a password. Please sign in directly using ${provider}.`,
       });
     }
 
@@ -327,11 +348,31 @@ export const resetPassword = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email }).select('+resetPasswordOtp +resetPasswordOtpExpires');
+    const user = await User.findOne({ email }).select(
+      '+resetPasswordOtp +resetPasswordOtpExpires +googleId +githubId'
+    );
     if (!user) {
       return res.status(404).json({
         success: false,
         message: 'User account not found',
+      });
+    }
+
+    // Block OAuth users from resetting/changing password
+    if (user.isOAuthUser || user.googleId || user.githubId) {
+      const provider = (user.googleId && user.githubId)
+        ? 'Google or GitHub'
+        : user.googleId
+        ? 'Google'
+        : user.githubId
+        ? 'GitHub'
+        : 'social OAuth';
+
+      return res.status(400).json({
+        success: false,
+        isOAuthAccount: true,
+        authProvider: user.googleId ? 'google' : user.githubId ? 'github' : 'oauth',
+        message: `This account is authenticated using ${provider} and cannot have a password set or reset. Please sign in directly using ${provider}.`,
       });
     }
 

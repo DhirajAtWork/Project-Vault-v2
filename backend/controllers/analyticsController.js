@@ -19,7 +19,7 @@ export const getStudentAnalytics = async (req, res) => {
     const studentId = req.user._id;
 
     // 1. DYNAMIC KPI: Total Projects owned by student
-    const activeProjects = await Project.find({ student: studentId }).select('_id title');
+    const activeProjects = await Project.find({ student: studentId }).select('_id title createdAt');
     const totalProjects = activeProjects.length;
     const activeProjectIds = activeProjects.map((p) => p._id);
     const activeProjectTitles = activeProjects.map((p) => p.title);
@@ -101,7 +101,15 @@ export const getStudentAnalytics = async (req, res) => {
       totalCollaborationRequests = collaborations.length;
     }
 
-    // 5. DYNAMIC 365-DAY GITHUB HEATMAP: Aggregated from ActivityLog collection
+    // 5. DYNAMIC 365-DAY GITHUB HEATMAP: Aggregated from ActivityLog collection & Projects
+    const projectCountByDate = new Map();
+    activeProjects.forEach((p) => {
+      if (p.createdAt) {
+        const dStr = new Date(p.createdAt).toISOString().split('T')[0];
+        projectCountByDate.set(dStr, (projectCountByDate.get(dStr) || 0) + 1);
+      }
+    });
+
     const activityByDate = await ActivityLog.aggregate([
       { $match: { student: studentId } },
       {
@@ -115,6 +123,12 @@ export const getStudentAnalytics = async (req, res) => {
     const activityMap = new Map();
     activityByDate.forEach((item) => {
       activityMap.set(item._id, item.totalCount);
+    });
+
+    // Ensure all published projects are reflected as real contributions on their creation date
+    projectCountByDate.forEach((pCount, dStr) => {
+      const existing = activityMap.get(dStr) || 0;
+      activityMap.set(dStr, Math.max(existing, pCount));
     });
 
     const heatmap = [];

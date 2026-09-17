@@ -257,6 +257,7 @@ const DashboardViewProject = () => {
             summary: res.project.aiEvaluation?.summary,
             checks: res.project.aiEvaluation?.checks || [],
           });
+          setIsDiagnosing(false);
           return;
         }
       }

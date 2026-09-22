@@ -139,7 +139,12 @@ export const loginUserApi = async (credentials) => {
 
   const data = await response.json();
   if (!response.ok) {
-    throw new Error(data.message || 'Invalid credentials');
+    const error = new Error(data.message || 'Invalid credentials');
+    error.requiresOtpVerification = Boolean(data.requiresOtpVerification);
+    error.requiresEmailVerification = Boolean(data.requiresEmailVerification);
+    error.email = data.email;
+    error.accountType = data.accountType;
+    throw error;
   }
   if (data.token && typeof window !== 'undefined') {
     localStorage.setItem('vault_token', data.token);

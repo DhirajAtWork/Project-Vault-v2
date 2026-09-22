@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import codingWorkspaceImg from '../assets/developer_coding_workspace.jpg';
 import {
   registerUserApi,
@@ -13,23 +13,38 @@ import {
 
 const SignUpPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
+  const [successMsg, setSuccessMsg] = useState(location.state?.infoMsg || '');
 
-  const [isOtpStep, setIsOtpStep] = useState(false);
+  const [isOtpStep, setIsOtpStep] = useState(Boolean(location.state?.isOtpStep));
   const [otpCode, setOtpCode] = useState('');
 
   const [formData, setFormData] = useState({
     name: '',
-    email: '',
-    accountType: 'student',
+    email: location.state?.email || '',
+    accountType: location.state?.accountType || 'student',
     password: '',
     confirmPassword: '',
     subscribeNewsletter: false,
   });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      // If user presses browser back while in OTP step, gracefully return to the registration form
+      if (isOtpStep) {
+        setIsOtpStep(false);
+        setErrorMsg('');
+        setSuccessMsg('');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [isOtpStep]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -55,6 +70,7 @@ const SignUpPage = () => {
       setSuccessMsg(res.message || 'Registration successful! Check your email for OTP verification code.');
       if (res.requiresOtpVerification) {
         setIsOtpStep(true);
+        window.history.pushState({ isOtpStep: true }, '');
       } else {
         setTimeout(() => {
           navigate('/dashboard');
@@ -286,7 +302,11 @@ const SignUpPage = () => {
               <div className="flex items-center justify-between pt-2">
                 <button
                   type="button"
-                  onClick={() => setIsOtpStep(false)}
+                  onClick={() => {
+                    setIsOtpStep(false);
+                    setErrorMsg('');
+                    setSuccessMsg('');
+                  }}
                   className="text-xs font-semibold text-slate-500 hover:text-slate-800"
                 >
                   ← Edit Account Details

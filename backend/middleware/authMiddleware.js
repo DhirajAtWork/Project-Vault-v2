@@ -31,6 +31,14 @@ export const protect = async (req, res, next) => {
       });
     }
 
+    if (!req.user.isEmailVerified && !req.user.isOAuthUser) {
+      return res.status(403).json({
+        success: false,
+        requiresEmailVerification: true,
+        message: 'Email not verified. Please complete OTP verification to access this resource.',
+      });
+    }
+
     next();
   } catch (error) {
     return res.status(401).json({

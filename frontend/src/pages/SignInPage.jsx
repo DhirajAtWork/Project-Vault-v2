@@ -55,6 +55,20 @@ const SignInPage = () => {
         }
       }, 1200);
     } catch (err) {
+      if (err.requiresOtpVerification || err.requiresEmailVerification) {
+        setSuccessMsg(err.message || 'Email not verified. A verification code has been sent to your email. Redirecting...');
+        setTimeout(() => {
+          navigate('/signup', {
+            state: {
+              isOtpStep: true,
+              email: err.email || formData.email,
+              accountType: err.accountType || formData.accountType,
+              infoMsg: err.message || 'Please enter the 6-digit verification code sent to your email.',
+            },
+          });
+        }, 1200);
+        return;
+      }
       setErrorMsg(err.message || 'Authentication failed');
     } finally {
       setLoading(false);

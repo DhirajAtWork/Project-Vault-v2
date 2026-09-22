@@ -85,9 +85,32 @@ export const registerUser = async (req, res) => {
     });
 
     if (existingUser) {
-      return res.status(400).json({
-        success: false,
-        message: `An account with this email already exists as a ${targetRole}. Please sign in or select a different role.`,
+      if (existingUser.isEmailVerified) {
+        return res.status(400).json({
+          success: false,
+          message: `An account with this email already exists as a ${targetRole}. Please sign in or select a different role.`,
+        });
+      }
+
+      // If account exists but email is not verified, update details and issue a new OTP
+      const otp = generateOtp();
+      const hashedOtp = hashOtp(otp);
+      const otpExpires = new Date(Date.now() + 15 * 60 * 1000);
+
+      existingUser.name = name;
+      existingUser.password = password;
+      existingUser.subscribeNewsletter = Boolean(subscribeNewsletter);
+      existingUser.otp = hashedOtp;
+      existingUser.otpExpires = otpExpires;
+      await existingUser.save();
+
+      sendOtpEmail(existingUser.email, existingUser.name, otp);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Account details updated! A new verification OTP code has been sent to your email.',
+        requiresOtpVerification: true,
+        email: existingUser.email,
       });
     }
 
@@ -222,6 +245,13 @@ export const resendOTP = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'User account not found',
+      });
+    }
+
+    if (user.isEmailVerified) {
+      return res.status(400).json({
+        success: false,
+        message: 'Your email is already verified. Please sign in directly.',
       });
     }
 
@@ -457,6 +487,25 @@ export const loginUser = async (req, res) => {
       });
     }
 
+    // Block unverified users from bypassing OTP verification
+    if (!matchedUser.isEmailVerified && !matchedUser.isOAuthUser) {
+      const otp = generateOtp();
+      matchedUser.otp = hashOtp(otp);
+      matchedUser.otpExpires = new Date(Date.now() + 15 * 60 * 1000);
+      await matchedUser.save();
+
+      sendOtpEmail(matchedUser.email, matchedUser.name, otp);
+
+      return res.status(403).json({
+        success: false,
+        requiresOtpVerification: true,
+        requiresEmailVerification: true,
+        email: matchedUser.email,
+        accountType: matchedUser.accountType,
+        message: 'Your email address is not verified yet. A verification code has been sent to your email. Please verify your email to sign in.',
+      });
+    }
+
     sendTokenResponse(matchedUser, 200, res, 'Signed in successfully');
   } catch (error) {
     console.error('Login Error:', error);
@@ -633,6 +682,14 @@ export const getCurrentUser = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'User account not found',
+      });
+    }
+
+    if (!user.isEmailVerified && !user.isOAuthUser) {
+      return res.status(403).json({
+        success: false,
+        requiresEmailVerification: true,
+        message: 'Email not verified. Please verify your email address.',
       });
     }
 

@@ -11,7 +11,12 @@ import {
   evaluateProjectAi,
 } from '../controllers/projectController.js';
 
+import sandboxRoutes from './sandboxRoutes.js';
+
 const router = express.Router();
+
+// Mount Docker Sandbox sub-router
+router.use('/:id/sandbox', sandboxRoutes);
 
 // Public / optional auth routes (scope === 'me' strictly requires authentication)
 router.get('/', (req, res, next) => {

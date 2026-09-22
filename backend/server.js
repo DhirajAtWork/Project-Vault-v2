@@ -8,6 +8,7 @@ import authRoutes from './routes/authRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import projectRoutes from './routes/projectRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import { stopAllSandboxes } from './services/dockerSandbox.service.js';
 
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -105,3 +106,13 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 [Project Vault v2 Backend]: Listening on http://localhost:${PORT}`);
 });
+
+// Graceful cleanup of sandbox containers on process exit
+const handleShutdown = async (signal) => {
+  console.log(`\n🛑 [Server Shutdown] Received ${signal}. Stopping active sandboxes...`);
+  await stopAllSandboxes();
+  process.exit(0);
+};
+
+process.on('SIGINT', () => handleShutdown('SIGINT'));
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));

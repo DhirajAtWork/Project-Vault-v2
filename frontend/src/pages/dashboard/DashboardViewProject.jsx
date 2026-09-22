@@ -32,11 +32,18 @@ import {
   Binary,
   FileDown,
   Clock,
-  AlertTriangle
+  AlertTriangle,
+  Square
 } from 'lucide-react';
 import { getProjectByIdApi, evaluateProjectAiApi } from '../../api/projectApi';
 import { getCurrentUserApi } from '../../api/authApi';
 import { getScoreStyles } from '../../utils/scoreColors';
+import {
+  startSandboxApi,
+  stopSandboxApi,
+  getSandboxStatusApi,
+  getSandboxLogsApi,
+} from '../../api/sandboxApi';
 
 const DashboardViewProject = () => {
   const { id } = useParams();
@@ -75,10 +82,16 @@ const DashboardViewProject = () => {
   // Terminal & Run commands
   const [copiedCmd, setCopiedCmd] = useState(false);
 
-  // Sandbox / Iframe viewport
+  // Sandbox / Iframe viewport & Live Container State
   const [activeIframeTab, setActiveIframeTab] = useState('viewport'); // viewport | logs
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [containerReloading, setContainerReloading] = useState(false);
+  const [sandboxStatus, setSandboxStatus] = useState('OFFLINE'); // OFFLINE | STARTING | ONLINE
+  const [sandboxPort, setSandboxPort] = useState(null);
+  const [sandboxLiveUrl, setSandboxLiveUrl] = useState(null);
+  const [sandboxLogs, setSandboxLogs] = useState([]);
+  const [sandboxMode, setSandboxMode] = useState('');
+  const [isSandboxActionLoading, setIsSandboxActionLoading] = useState(false);
 
   // Fetch Project Details from backend
   useEffect(() => {
@@ -305,10 +318,70 @@ const DashboardViewProject = () => {
     }
   };
 
-  // Reload Container Sandbox
-  const handleReloadContainer = () => {
+  // Start or launch Docker Sandbox Container
+  const handleStartContainer = async () => {
+    if (!project?._id) return;
+    setIsSandboxActionLoading(true);
+    setSandboxStatus('STARTING');
+    try {
+      const res = await startSandboxApi(project._id, envVars);
+      if (res.success) {
+        setSandboxStatus(res.status || 'ONLINE');
+        setSandboxPort(res.port || null);
+        setSandboxLiveUrl(res.liveUrl || null);
+        setSandboxMode(res.mode || '');
+        setSandboxLogs(res.logs || []);
+      }
+    } catch (err) {
+      console.error('Failed to start sandbox container:', err);
+      setSandboxStatus('OFFLINE');
+      setSandboxLogs((prev) => [
+        ...prev,
+        `[${new Date().toISOString()}] [Sandbox Error] Failed to launch container: ${err.message}`,
+      ]);
+    } finally {
+      setIsSandboxActionLoading(false);
+    }
+  };
+
+  // Stop running Docker Sandbox Container
+  const handleStopContainer = async () => {
+    if (!project?._id) return;
+    setIsSandboxActionLoading(true);
+    try {
+      const res = await stopSandboxApi(project._id);
+      if (res.success) {
+        setSandboxStatus('OFFLINE');
+        setSandboxPort(null);
+        setSandboxLiveUrl(null);
+        setSandboxLogs((prev) => [
+          ...prev,
+          `[${new Date().toISOString()}] [Container Stopped] Container shut down cleanly. Port released.`,
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to stop sandbox container:', err);
+    } finally {
+      setIsSandboxActionLoading(false);
+    }
+  };
+
+  // Reload or restart container sandbox
+  const handleReloadContainer = async () => {
     setContainerReloading(true);
-    setTimeout(() => setContainerReloading(false), 800);
+    await handleStartContainer();
+    setContainerReloading(false);
+  };
+
+  // Refresh live container logs
+  const handleRefreshLogs = async () => {
+    if (!project?._id) return;
+    try {
+      const res = await getSandboxLogsApi(project._id);
+      if (res.success && Array.isArray(res.logs)) {
+        setSandboxLogs(res.logs);
+      }
+    } catch (e) {}
   };
 
   if (loading) {
@@ -826,16 +899,56 @@ const DashboardViewProject = () => {
             </div>
 
             {/* Container Control Actions */}
-            <div className="flex items-center gap-2">
-              <span className="bg-emerald-100 text-emerald-800 text-[11px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1.5 font-mono">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Container: Online (Port 3000)</span>
-              </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              {sandboxStatus === 'ONLINE' ? (
+                <span className="bg-emerald-100 text-emerald-800 border border-emerald-300/80 text-[11px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1.5 font-mono shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Container: Online ({sandboxPort ? `Port ${sandboxPort}` : 'Active'})</span>
+                </span>
+              ) : sandboxStatus === 'STARTING' ? (
+                <span className="bg-amber-100 text-amber-800 border border-amber-300/80 text-[11px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1.5 font-mono shadow-2xs">
+                  <RefreshCw className="w-3 h-3 text-amber-600 animate-spin" />
+                  <span>Container: Initializing...</span>
+                </span>
+              ) : (
+                <span className="bg-stone-100 text-slate-600 border border-stone-300 text-[11px] font-extrabold px-3 py-1 rounded-full flex items-center gap-1.5 font-mono">
+                  <span className="w-2 h-2 rounded-full bg-slate-400" />
+                  <span>Container: Offline</span>
+                </span>
+              )}
+
+              {/* Start / Stop Toggle Button */}
+              {sandboxStatus === 'ONLINE' ? (
+                <button
+                  onClick={handleStopContainer}
+                  disabled={isSandboxActionLoading}
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50"
+                  title="Stop Sandbox Container"
+                >
+                  <Square className="w-3.5 h-3.5 fill-rose-600" />
+                  <span>Stop Sandbox</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleStartContainer}
+                  disabled={isSandboxActionLoading || sandboxStatus === 'STARTING'}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 disabled:opacity-50"
+                  title="Start Sandbox Container"
+                >
+                  {isSandboxActionLoading || sandboxStatus === 'STARTING' ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5 fill-white" />
+                  )}
+                  <span>Launch Container</span>
+                </button>
+              )}
 
               <button
                 onClick={handleReloadContainer}
-                className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-slate-700 transition-colors cursor-pointer"
-                title="Reload Container Sandbox"
+                disabled={isSandboxActionLoading}
+                className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-slate-700 transition-colors cursor-pointer disabled:opacity-50"
+                title="Restart Container Sandbox"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${containerReloading ? 'animate-spin' : ''}`} />
               </button>
@@ -856,19 +969,26 @@ const DashboardViewProject = () => {
           }`}>
             {/* Mock Browser URL Bar */}
             <div className="bg-slate-950 px-4 py-2.5 border-b border-slate-800 flex items-center justify-between text-xs text-slate-400">
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <span className="w-2.5 h-2.5 rounded-full bg-rose-500/80" />
                   <span className="w-2.5 h-2.5 rounded-full bg-amber-500/80" />
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-500/80" />
                 </div>
-                <div className="bg-slate-900 px-3 py-1 rounded-lg border border-slate-800 font-mono text-[11px] text-slate-300 flex items-center gap-1.5 ml-2">
-                  <Lock className="w-3 h-3 text-emerald-400" />
-                  <span>{project.liveUrl || 'http://localhost:3000 (Docker Sandbox)'}</span>
+                <div className="bg-slate-900 px-3 py-1 rounded-lg border border-slate-800 font-mono text-[11px] text-slate-300 flex items-center gap-1.5 ml-2 truncate">
+                  <Lock className="w-3 h-3 text-emerald-400 shrink-0" />
+                  <span className="truncate">
+                    {sandboxLiveUrl || project.liveUrl || (sandboxPort ? `http://localhost:${sandboxPort}` : 'http://localhost:3000 (Docker Sandbox Offline)')}
+                  </span>
                 </div>
+                {sandboxMode && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-emerald-400 border border-slate-700 shrink-0 hidden md:inline-block">
+                    {sandboxMode === 'DOCKER_DAEMON' ? 'Docker Daemon' : 'Virtual Sandbox'}
+                  </span>
+                )}
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => setActiveIframeTab('viewport')}
                   className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
@@ -878,7 +998,10 @@ const DashboardViewProject = () => {
                   Live Viewport
                 </button>
                 <button
-                  onClick={() => setActiveIframeTab('logs')}
+                  onClick={() => {
+                    setActiveIframeTab('logs');
+                    handleRefreshLogs();
+                  }}
                   className={`px-2.5 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
                     activeIframeTab === 'logs' ? 'bg-slate-800 text-white' : 'text-slate-400 hover:text-white'
                   }`}
@@ -891,7 +1014,26 @@ const DashboardViewProject = () => {
             {/* Viewport Content */}
             <div className="flex-1 bg-white relative overflow-hidden">
               {activeIframeTab === 'viewport' ? (
-                project.liveUrl ? (
+                sandboxStatus === 'ONLINE' ? (
+                  <iframe
+                    src={sandboxLiveUrl || project.liveUrl || `http://localhost:${sandboxPort || 3000}`}
+                    title={project.title}
+                    className="w-full h-full border-0"
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                  />
+                ) : sandboxStatus === 'STARTING' ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center p-8 text-center bg-slate-950 text-white space-y-4">
+                    <div className="w-16 h-16 rounded-3xl bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center shadow-lg animate-spin">
+                      <RefreshCw className="w-8 h-8" />
+                    </div>
+                    <div className="space-y-1.5 max-w-md">
+                      <h3 className="text-xl font-bold font-brand tracking-tight">Booting Docker Sandbox Container...</h3>
+                      <p className="text-xs text-slate-400 leading-relaxed font-mono">
+                        Allocating port, mounting project archive, and injecting environment variables...
+                      </p>
+                    </div>
+                  </div>
+                ) : project.liveUrl ? (
                   <iframe
                     src={project.liveUrl}
                     title={project.title}
@@ -909,31 +1051,69 @@ const DashboardViewProject = () => {
                         {isRecruiter ? (
                           <>Sandboxed container and entrypoint <code className="text-emerald-400">{project.runCommand || 'npm run dev'}</code> mapped to port 3000. Full live container isolation ready for automated Docker execution.</>
                         ) : (
-                          <>Environment variables and entrypoint <code className="text-emerald-400">{project.runCommand || 'npm run dev'}</code> mapped to port 3000. Full live container isolation ready for automated Docker execution.</>
+                          <>Environment variables and entrypoint <code className="text-emerald-400">{project.runCommand || 'npm run dev'}</code> mapped to isolated port. Full container isolation ready for execution.</>
                         )}
                       </p>
                     </div>
-                    {project.githubUrl && (
-                      <a
-                        href={project.githubUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-5 py-2.5 rounded-xl shadow-md transition-all active:scale-95"
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={handleStartContainer}
+                        disabled={isSandboxActionLoading}
+                        className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs px-5 py-2.5 rounded-xl shadow-md transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer"
                       >
-                        Inspect Source Code on GitHub
-                      </a>
-                    )}
+                        <Play className="w-3.5 h-3.5 fill-slate-950" />
+                        <span>Launch Sandbox Container</span>
+                      </button>
+                      {project.githubUrl && (
+                        <a
+                          href={project.githubUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all active:scale-95"
+                        >
+                          View GitHub
+                        </a>
+                      )}
+                    </div>
                   </div>
                 )
               ) : (
                 /* Container Logs View */
-                <div className="w-full h-full bg-slate-950 text-slate-300 font-mono text-xs p-5 overflow-y-auto space-y-1">
-                  <p className="text-slate-500">[{new Date().toISOString()}] [Docker daemon] Container engine initialized</p>
-                  <p className="text-emerald-400">[{new Date().toISOString()}] [Env Injection] {envVars.length} variables loaded from Render-style config</p>
-                  <p className="text-slate-300">[{new Date().toISOString()}] [Build] Executing: {project.installCmd || 'npm install'}</p>
-                  <p className="text-emerald-400">[{new Date().toISOString()}] [Runtime] Starting daemon: {project.runCommand || 'npm run dev'}</p>
-                  <p className="text-teal-300">[{new Date().toISOString()}] [Network] Port mapped: 0.0.0.0:3000 {'->'} container:3000</p>
-                  <p className="text-slate-400">[{new Date().toISOString()}] [Status] HTTP 200 OK healthcheck passed</p>
+                <div className="w-full h-full bg-slate-950 text-slate-300 font-mono text-xs p-5 overflow-y-auto space-y-1 flex flex-col justify-between">
+                  <div className="space-y-1.5 overflow-y-auto flex-1 pr-2">
+                    {sandboxLogs && sandboxLogs.length > 0 ? (
+                      sandboxLogs.map((line, idx) => (
+                        <p
+                          key={idx}
+                          className={
+                            line.includes('Error') || line.includes('Failed')
+                              ? 'text-rose-400'
+                              : line.includes('Online') || line.includes('Started') || line.includes('healthy')
+                              ? 'text-emerald-400'
+                              : line.includes('Network') || line.includes('Port')
+                              ? 'text-teal-300'
+                              : line.includes('Notice') || line.includes('Runtime')
+                              ? 'text-amber-300'
+                              : 'text-slate-400'
+                          }
+                        >
+                          {line}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-slate-500">[{new Date().toISOString()}] [Docker daemon] Container engine initialized. Click "Launch Container" to spin up sandbox.</p>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
+                    <span>Active Port: {sandboxPort ? `localhost:${sandboxPort}` : 'None (Offline)'}</span>
+                    <button
+                      onClick={handleRefreshLogs}
+                      className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 font-sans transition-colors cursor-pointer"
+                    >
+                      Refresh Logs
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

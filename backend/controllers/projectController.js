@@ -531,7 +531,7 @@ export const evaluateProjectAi = async (req, res) => {
         try {
           const promptText = `
 You are an expert AI software auditor, container security architect, and AST evaluator for Project Vault.
-Audit this student software project and compute an objective, dynamic health score between 35 and 95 based on actual code health, test presence, and security.
+Audit this student software project and compute an objective, file-based health score between 5 and 98 based on actual code health, code completeness, test presence, and security.
 
 Project Details:
 - Title: "${project.title}"
@@ -542,16 +542,22 @@ Project Details:
 - Environment Variables: ${envCount} variables configured
 - Executable File: "${hasExe ? 'Attached' : 'Source-only repo'}"
 
-Scoring Guidelines:
-- Missing unit tests (no test command): Deduct 15-20 points.
-- Missing or weak documentation: Deduct 10 points.
-- No environment variables / incomplete configuration: Deduct 5-10 points.
-- Realistic project health score is typically between 55 and 85.
+CRITICAL FILE & COMPLETENESS SCORING RULES:
+1. NO EXECUTABLE SOURCE CODE:
+   - If the project has no executable programming files or only non-code files, score MUST be 5 - 25 (Grade F).
+   - Summary must state: "CRITICAL AUDIT FAILURE: No executable source code files detected in this repository."
+2. PARTIAL / STUB FILES:
+   - If the project contains incomplete implementations, stub functions (TODOs, pass, empty bodies), or is an unfinished scaffold (< 45 LOC), score MUST be 26 - 50 (Grade D to Grade C-).
+   - Summary must state: "PARTIAL CODEBASE AUDIT: Repository contains incomplete implementations, stub functions, or missing core logic."
+3. WORKING CODEBASE:
+   - Real functioning code with some missing tests or documentation: score 55 - 75.
+4. PRODUCTION-READY:
+   - Complete modules, automated tests, clean architecture, documentation: score 76 - 98.
 
 Return strictly raw JSON (no markdown backticks, no wrapping text):
 {
-  "health_score": <calculated integer between 35 and 95>,
-  "summary": "<2-sentence concise technical evaluation of this repository architecture, environment integrity, and container execution safety>",
+  "health_score": <calculated integer between 5 and 98>,
+  "summary": "<2-sentence concise technical evaluation of this repository architecture, completeness, and container execution safety>",
   "architecture_detail": "<One concise sentence describing framework design and AST code quality>",
   "runtime_detail": "<One concise sentence describing deterministic runtime commands and container execution>",
   "secrets_detail": "<One concise sentence describing environment configuration and security posture>",

@@ -130,17 +130,21 @@ const DashboardViewProject = () => {
             }
             const isCompleted = res.project.aiEvaluation?.status === 'Completed';
             if (isCompleted) {
-              const scoreVal = res.project.score !== undefined && res.project.score !== null ? res.project.score : null;
+              const scoreVal = (res.project.score !== undefined && res.project.score !== null)
+                ? res.project.score
+                : (res.project.aiEvaluation?.score !== undefined && res.project.aiEvaluation?.score !== null
+                    ? res.project.aiEvaluation.score
+                    : null);
               const gradeVal = res.project.grade || res.project.aiEvaluation?.grade || null;
               setHealthScore(scoreVal);
               setAiGrade(gradeVal);
-              if (res.project.aiEvaluation?.checks?.length > 0) {
+              if (res.project.aiEvaluation?.checks?.length > 0 || res.project.aiEvaluation?.summary) {
                 setHealthReport({
                   timestamp: res.project.aiEvaluation.evaluatedAt ? new Date(res.project.aiEvaluation.evaluatedAt).toLocaleTimeString() : 'Recent',
                   score: scoreVal,
                   grade: gradeVal,
                   summary: res.project.aiEvaluation.summary,
-                  checks: res.project.aiEvaluation.checks,
+                  checks: res.project.aiEvaluation.checks || [],
                 });
               }
             } else {
@@ -402,8 +406,12 @@ const DashboardViewProject = () => {
   // Dynamic score-based theme computation
   const activeScore = (healthReport?.score !== undefined && healthReport?.score !== null)
     ? healthReport.score
-    : ((healthScore !== null && healthScore !== undefined) ? healthScore : project?.score);
-  const activeGrade = healthReport?.grade || aiGrade || project?.grade || null;
+    : ((healthScore !== null && healthScore !== undefined)
+        ? healthScore
+        : ((project?.score !== undefined && project?.score !== null)
+            ? project.score
+            : project?.aiEvaluation?.score));
+  const activeGrade = healthReport?.grade || aiGrade || project?.grade || project?.aiEvaluation?.grade || null;
   const scoreStyles = getScoreStyles(activeScore, activeGrade);
 
   return (
@@ -764,7 +772,7 @@ const DashboardViewProject = () => {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold">
                 <span className="flex items-center gap-1.5">
                   <Sparkles className={`w-4 h-4 ${scoreStyles.bannerIcon}`} />
-                  <span>AI Audit Complete: Generated {healthReport.grade || aiGrade || project.grade || 'Grade A+'} ({healthReport.score || healthScore}/100)</span>
+                  <span>AI Audit Complete: Generated {activeGrade || 'Grade A+'} ({activeScore ?? 0}/100)</span>
                 </span>
                 <span className={`font-mono ${scoreStyles.bannerTime} text-[11px]`}>Evaluated at {healthReport.timestamp}</span>
               </div>

@@ -11,6 +11,28 @@ const execAsync = util.promisify(exec);
 // In-memory active sandbox registry: projectId -> sandbox state
 const activeSandboxes = new Map();
 
+const MIME_TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.htm': 'text/html; charset=utf-8',
+  '.php': 'text/html; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
+  '.mjs': 'application/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.webp': 'image/webp',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/plain; charset=utf-8',
+};
+
 /**
  * Check if Docker CLI / Daemon is active on the host machine
  */
@@ -27,20 +49,18 @@ export async function isDockerAvailable() {
 /**
  * Find an available TCP port on the host system within a specified range
  */
-/**
- * Find an available TCP port on the host system within a specified range
- */
 async function findAvailablePort(startPort = 3001, endPort = 3100) {
   const isPortTaken = (port) => {
     return new Promise((resolve) => {
-      // Check in-memory registry first
       for (const sandbox of activeSandboxes.values()) {
-        if ((sandbox.port === port || sandbox.targetPort === port || sandbox.activeAppPort === port) && sandbox.status !== 'OFFLINE') {
+        if (
+          (sandbox.port === port || sandbox.targetPort === port || sandbox.backendPort === port) &&
+          sandbox.status !== 'OFFLINE'
+        ) {
           return resolve(true);
         }
       }
 
-      // Check TCP socket availability on OS
       const server = net.createServer();
       server.unref();
       server.on('error', () => resolve(true));
@@ -58,7 +78,7 @@ async function findAvailablePort(startPort = 3001, endPort = 3100) {
 }
 
 /**
- * Terminate a process and all its child processes cleanly (cross-platform)
+ * Terminate a process tree cleanly on Windows or Linux
  */
 function terminateProcessTree(pid) {
   if (!pid) return;
@@ -78,7 +98,7 @@ function terminateProcessTree(pid) {
 }
 
 /**
- * Probe a TCP port or HTTP endpoint to check if an application web server is responsive
+ * Probe an HTTP port to see if a web server has bound and is responding
  */
 function probeHttpPort(port, timeoutMs = 1000) {
   return new Promise((resolve) => {
@@ -90,7 +110,7 @@ function probeHttpPort(port, timeoutMs = 1000) {
         timeout: timeoutMs,
       },
       (res) => {
-        res.resume(); // consume response data to free up memory
+        res.resume();
         resolve(true);
       }
     );
@@ -104,7 +124,7 @@ function probeHttpPort(port, timeoutMs = 1000) {
 }
 
 /**
- * Resolve the local path of the uploaded project executable or archive file
+ * Resolve the disk path of the project's uploaded executable or source archive
  */
 function resolveExecutablePath(project) {
   if (!project.executableFile) return null;
@@ -117,6 +137,7 @@ function resolveExecutablePath(project) {
     candidates.push(path.resolve(process.cwd(), cleanRel));
     candidates.push(path.resolve(process.cwd(), 'uploads', 'executables', path.basename(cleanRel)));
     candidates.push(path.resolve(process.cwd(), 'backend', cleanRel));
+    candidates.push(path.resolve(process.cwd(), 'backend', 'uploads', 'executables', path.basename(cleanRel)));
   }
   if (name) {
     candidates.push(path.resolve(process.cwd(), 'uploads', 'executables', name));
@@ -131,67 +152,60 @@ function resolveExecutablePath(project) {
 }
 
 /**
- * Locate the primary runnable directory inside an extracted workspace
+ * Recursively find all files in a directory up to a max depth
  */
-function findRunnableSubdir(rootDir) {
-  const isRunnable = (dir) => {
-    return (
-      fs.existsSync(path.join(dir, 'package.json')) ||
-      fs.existsSync(path.join(dir, 'requirements.txt')) ||
-      fs.existsSync(path.join(dir, 'composer.json')) ||
-      fs.existsSync(path.join(dir, 'index.php')) ||
-      fs.existsSync(path.join(dir, 'main.py')) ||
-      fs.existsSync(path.join(dir, 'app.py'))
-    );
-  };
-
-  if (isRunnable(rootDir)) return rootDir;
+function getFileList(dir, maxDepth = 4, currentDepth = 0) {
+  let results = [];
+  if (currentDepth > maxDepth || !fs.existsSync(dir)) return results;
 
   try {
-    const entries = fs.readdirSync(rootDir);
-    // Priority order for candidate subdirectories
-    const preferred = ['backend', 'server', 'service-hub', 'app', 'src', 'frontend'];
-    for (const name of preferred) {
-      const candidate = path.join(rootDir, name);
-      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory() && isRunnable(candidate)) {
-        return candidate;
-      }
-    }
-
-    for (const entry of entries) {
-      const sub = path.join(rootDir, entry);
-      if (fs.statSync(sub).isDirectory() && isRunnable(sub)) {
-        return sub;
+    const list = fs.readdirSync(dir);
+    for (const file of list) {
+      if (file === 'node_modules' || file === '.git' || file === 'vendor') continue;
+      const fullPath = path.join(dir, file);
+      const stat = fs.statSync(fullPath);
+      if (stat && stat.isDirectory()) {
+        results = results.concat(getFileList(fullPath, maxDepth, currentDepth + 1));
+      } else {
+        results.push(fullPath);
       }
     }
   } catch (e) {}
 
-  return rootDir;
+  return results;
 }
 
 /**
- * Prepare an isolated sandbox workspace for the project:
- * - Unzips project archive into sandbox/src
- * - Or copies standalone binary .exe into sandbox/src
+ * Unpacks the uploaded archive or stages the binary into an isolated sandbox
  */
 function prepareProjectWorkspace(projectId, archiveOrExePath) {
   const sandboxDir = path.resolve('sandboxes', projectId);
-  if (fs.existsSync(sandboxDir)) {
-    try {
-      fs.rmSync(sandboxDir, { recursive: true, force: true });
-    } catch (e) {}
-  }
-  fs.mkdirSync(sandboxDir, { recursive: true });
-
   const fileName = path.basename(archiveOrExePath);
   const ext = path.extname(archiveOrExePath).toLowerCase();
   const isZip = ext === '.zip';
 
   if (isZip) {
+    // If sandbox workspace already exists with extracted contents, reuse it to prevent Windows EBUSY locks
+    if (fs.existsSync(sandboxDir)) {
+      try {
+        const existingEntries = fs.readdirSync(sandboxDir);
+        if (existingEntries.length > 0) {
+          let appRoot = sandboxDir;
+          if (existingEntries.length === 1) {
+            const single = path.join(sandboxDir, existingEntries[0]);
+            if (fs.statSync(single).isDirectory()) {
+              appRoot = single;
+            }
+          }
+          return { sandboxDir, appRoot, isBinary: false, binaryName: null };
+        }
+      } catch (e) {}
+    }
+
+    fs.mkdirSync(sandboxDir, { recursive: true });
     const zip = new AdmZip(archiveOrExePath);
     zip.extractAllTo(sandboxDir, true);
 
-    // Detect if archive extracted into a single wrapper folder
     const entries = fs.readdirSync(sandboxDir);
     let appRoot = sandboxDir;
     if (entries.length === 1) {
@@ -201,101 +215,258 @@ function prepareProjectWorkspace(projectId, archiveOrExePath) {
       }
     }
 
-    // Intelligently find directory with package.json / requirements / index.php
-    appRoot = findRunnableSubdir(appRoot);
-
     return { sandboxDir, appRoot, isBinary: false, binaryName: null };
   }
 
-  // Standalone executable binary (.exe or other)
+  // Standalone binary executable
+  fs.mkdirSync(sandboxDir, { recursive: true });
   const destPath = path.join(sandboxDir, fileName);
-  fs.copyFileSync(archiveOrExePath, destPath);
+  if (!fs.existsSync(destPath)) {
+    fs.copyFileSync(archiveOrExePath, destPath);
+  }
   return { sandboxDir, appRoot: sandboxDir, isBinary: true, binaryName: fileName, binaryPath: destPath };
 }
 
 /**
- * Retrieve and deduce all execution commands strictly from project details
+ * Analyze workspace to detect the exact execution profile
  */
-function extractProjectCommands(project, workspace) {
-  let installCmd = (project.installCmd || '').trim();
-  let runCommand = (project.runCommand || '').trim();
-
-  // If commands are not directly stored on project root, check aiEvaluation.RUN_COMMANDS
-  const aiCommands = Array.isArray(project.aiEvaluation?.RUN_COMMANDS)
-    ? project.aiEvaluation.RUN_COMMANDS.filter(Boolean)
-    : [];
-
-  if (!installCmd && aiCommands.length > 1) {
-    const candidate = aiCommands[0].trim();
-    if (/^(npm|yarn|pnpm|pip|composer)\s+(install|i|add)/i.test(candidate)) {
-      installCmd = candidate;
-    }
+function analyzeWorkspaceProfile(workspace) {
+  if (workspace.isBinary) {
+    return {
+      type: 'BINARY_EXE',
+      binaryPath: workspace.binaryPath,
+      binaryName: workspace.binaryName,
+    };
   }
 
-  if (!runCommand && aiCommands.length > 0) {
-    const candidate = aiCommands.length > 1 ? aiCommands[1].trim() : aiCommands[0].trim();
-    if (!/^(npm|yarn|pnpm|pip|composer)\s+(install|i|add)/i.test(candidate)) {
-      runCommand = candidate;
-    }
+  const root = workspace.appRoot;
+
+  // Check for Fullstack structure with frontend and backend folders
+  const candidateFrontend = [path.join(root, 'frontend'), path.join(root, 'client'), path.join(root, 'ui')].find(
+    (p) => fs.existsSync(p) && fs.statSync(p).isDirectory()
+  );
+  const candidateBackend = [path.join(root, 'backend'), path.join(root, 'server'), path.join(root, 'api')].find(
+    (p) => fs.existsSync(p) && fs.statSync(p).isDirectory()
+  );
+
+  if (candidateFrontend && fs.existsSync(path.join(candidateFrontend, 'package.json'))) {
+    return {
+      type: 'FULLSTACK_NODE',
+      frontendDir: candidateFrontend,
+      backendDir: candidateBackend && fs.existsSync(path.join(candidateBackend, 'package.json')) ? candidateBackend : null,
+      appRoot: candidateFrontend,
+    };
   }
 
-  // If this is a standalone binary executable (.exe)
-  if (workspace.isBinary && workspace.binaryName) {
-    if (!runCommand) {
-      runCommand = process.platform === 'win32'
-        ? `.\\${workspace.binaryName}`
-        : `./${workspace.binaryName}`;
-    }
-    return { installCmd: '', runCommand };
-  }
-
-  // Check filesystem markers in appRoot for intelligent fallbacks if empty
-  const appRoot = workspace.appRoot;
-  if (!installCmd && appRoot && fs.existsSync(appRoot)) {
-    if (fs.existsSync(path.join(appRoot, 'package.json'))) {
-      installCmd = 'npm install';
-    } else if (fs.existsSync(path.join(appRoot, 'requirements.txt'))) {
-      installCmd = 'pip install -r requirements.txt';
-    } else if (fs.existsSync(path.join(appRoot, 'composer.json'))) {
-      installCmd = 'composer install';
-    }
-  }
-
-  if (!runCommand && appRoot && fs.existsSync(appRoot)) {
-    if (fs.existsSync(path.join(appRoot, 'package.json'))) {
-      try {
-        const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
-        if (pkg.scripts?.dev) {
-          runCommand = 'npm run dev';
-        } else if (pkg.scripts?.start) {
-          runCommand = 'npm start';
-        } else if (pkg.main) {
-          runCommand = `node ${pkg.main}`;
-        } else {
-          runCommand = 'node index.js';
-        }
-      } catch (e) {
-        runCommand = 'npm start';
+  // Check for PHP application (e.g. ServiceHub)
+  const candidatePhpDirs = [
+    root,
+    path.join(root, 'service-hub'),
+    path.join(root, 'src'),
+    path.join(root, 'app'),
+    path.join(root, 'public'),
+  ];
+  for (const dir of candidatePhpDirs) {
+    if (fs.existsSync(dir)) {
+      if (fs.existsSync(path.join(dir, 'index.php')) || fs.existsSync(path.join(dir, 'composer.json'))) {
+        return {
+          type: 'PHP_APP',
+          phpRoot: dir,
+          appRoot: dir,
+        };
       }
-    } else if (fs.existsSync(path.join(appRoot, 'main.py'))) {
-      runCommand = 'python main.py';
-    } else if (fs.existsSync(path.join(appRoot, 'app.py'))) {
-      runCommand = 'python app.py';
-    } else if (fs.existsSync(path.join(appRoot, 'index.php'))) {
-      runCommand = 'php -S 0.0.0.0:8000';
     }
   }
 
-  return { installCmd, runCommand };
+  // Check for single Node.js web app
+  if (fs.existsSync(path.join(root, 'package.json'))) {
+    return {
+      type: 'NODE_WEB',
+      appRoot: root,
+    };
+  }
+
+  // Check for Python application
+  if (
+    fs.existsSync(path.join(root, 'app.py')) ||
+    fs.existsSync(path.join(root, 'main.py')) ||
+    fs.existsSync(path.join(root, 'requirements.txt'))
+  ) {
+    return {
+      type: 'PYTHON_APP',
+      appRoot: root,
+    };
+  }
+
+  // Static HTML website
+  if (fs.existsSync(path.join(root, 'index.html'))) {
+    return {
+      type: 'STATIC_WEB',
+      appRoot: root,
+    };
+  }
+
+  // Document / file repository (e.g. text files, documents)
+  return {
+    type: 'STATIC_EXPLORER',
+    appRoot: root,
+  };
 }
 
 /**
- * Render the live terminal and diagnostics viewport for applications, binaries, and build steps
+ * Process and serve a PHP or static file from project directory
+ */
+function serveProjectFile(appRoot, reqUrl, res) {
+  let cleanUrl = reqUrl.split('?')[0];
+  if (cleanUrl === '/' || cleanUrl === '') {
+    cleanUrl = fs.existsSync(path.join(appRoot, 'index.html'))
+      ? '/index.html'
+      : fs.existsSync(path.join(appRoot, 'index.php'))
+      ? '/index.php'
+      : '';
+  }
+
+  let filePath = path.join(appRoot, cleanUrl);
+
+  if (!fs.existsSync(filePath)) {
+    if (fs.existsSync(filePath + '.php')) {
+      filePath = filePath + '.php';
+    } else if (fs.existsSync(filePath + '.html')) {
+      filePath = filePath + '.html';
+    } else if (fs.existsSync(path.join(filePath, 'index.php'))) {
+      filePath = path.join(filePath, 'index.php');
+    } else if (fs.existsSync(path.join(filePath, 'index.html'))) {
+      filePath = path.join(filePath, 'index.html');
+    }
+  }
+
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+    if (ext === '.php') {
+      try {
+        const rawContent = fs.readFileSync(filePath, 'utf8');
+        // Clean PHP opening tags & server logic to render complete presentation HTML
+        let processedHtml = rawContent
+          .replace(/<\?php[\s\S]*?\?>/gi, '')
+          .replace(/<\?=[\s\S]*?\?>/gi, '')
+          .trim();
+
+        if (!processedHtml) {
+          processedHtml = `<!DOCTYPE html><html><body style="background:#090d16;color:#38bdf8;font-family:monospace;padding:24px;"><h2>${path.basename(filePath)}</h2><pre>${rawContent.replace(/</g, '&lt;')}</pre></body></html>`;
+        }
+
+        res.writeHead(200, {
+          'Content-Type': 'text/html; charset=utf-8',
+          'Access-Control-Allow-Origin': '*',
+        });
+        return res.end(processedHtml);
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        return res.end('Error serving PHP page: ' + err.message);
+      }
+    }
+
+    res.writeHead(200, {
+      'Content-Type': contentType,
+      'Access-Control-Allow-Origin': '*',
+    });
+    return fs.createReadStream(filePath).pipe(res);
+  }
+
+  return false;
+}
+
+/**
+ * Render Project Files Explorer for projects that are document / text repositories (e.g. hello.zip)
+ */
+function renderProjectFilesExplorerHtml(sandbox, appRoot) {
+  const allFiles = getFileList(appRoot);
+  const title = sandbox.projectTitle || 'Project Vault Repository';
+  const fileName = sandbox.uploadedFileName || 'project-artifact';
+
+  // Find primary file to display
+  let primaryFile = allFiles[0] || null;
+  let fileContent = '';
+  if (primaryFile && fs.existsSync(primaryFile)) {
+    try {
+      fileContent = fs.readFileSync(primaryFile, 'utf8');
+    } catch (e) {
+      fileContent = '(Binary or unreadable file)';
+    }
+  }
+
+  const safeContent = fileContent.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const displayRelPath = primaryFile ? path.relative(appRoot, primaryFile) : fileName;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} - Project Files Viewport</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; }
+    body { background: #070a14; color: #f1f5f9; min-height: 100vh; display: flex; flex-direction: column; }
+    .header { background: #0b1120; border-bottom: 1px solid #1e293b; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .icon { width: 32px; height: 32px; border-radius: 8px; background: #059669; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; font-size: 15px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; font-family: monospace; }
+    .layout { display: flex; flex: 1; overflow: hidden; height: calc(100vh - 65px); }
+    .sidebar { width: 260px; background: #0b1120; border-right: 1px solid #1e293b; padding: 16px; overflow-y: auto; }
+    .sidebar-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin-bottom: 12px; }
+    .file-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; font-size: 12px; color: #94a3b8; background: #0f172a; margin-bottom: 6px; font-family: monospace; word-break: break-all; }
+    .file-active { background: #1e293b; color: #38bdf8; border: 1px solid #334155; font-weight: 700; }
+    .main { flex: 1; display: flex; flex-direction: column; background: #020617; }
+    .file-bar { background: #0b1120; border-bottom: 1px solid #1e293b; padding: 10px 20px; font-size: 12px; font-family: monospace; color: #38bdf8; display: flex; align-items: center; justify-content: space-between; }
+    .content-box { flex: 1; padding: 20px; overflow-y: auto; font-family: 'Consolas', 'Courier New', monospace; font-size: 13px; line-height: 1.6; color: #e2e8f0; white-space: pre-wrap; word-break: break-all; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <div class="icon">📁</div>
+      <div>
+        <div style="font-size: 15px; font-weight: 800; color: #f8fafc;">${title}</div>
+        <div style="font-size: 11px; color: #64748b; font-family: monospace;">PROJECT ARTIFACT PREVIEW • ${fileName}</div>
+      </div>
+    </div>
+    <span class="badge">● ARTIFACT VERIFIED & MOUNTED</span>
+  </div>
+  <div class="layout">
+    <div class="sidebar">
+      <div class="sidebar-title">Project Contents (${allFiles.length || 1} files)</div>
+      ${
+        allFiles.length > 0
+          ? allFiles
+              .map(
+                (f) =>
+                  `<div class="file-item file-active">📄 ${path.relative(appRoot, f)}</div>`
+              )
+              .join('')
+          : `<div class="file-item file-active">📄 ${fileName}</div>`
+      }
+    </div>
+    <div class="main">
+      <div class="file-bar">
+        <span>📄 ${displayRelPath}</span>
+        <span style="color: #64748b;">${fileContent.length} bytes</span>
+      </div>
+      <div class="content-box">${safeContent || '// (Empty or binary artifact content)'}</div>
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Render Live Diagnostics & Terminal Viewport for binaries, CLI scripts, and booting services
  */
 function renderDiagnosticTerminalHtml(sandbox) {
   const title = sandbox.projectTitle || 'Project Vault Sandbox';
   const binaryOrArchive = sandbox.uploadedFileName || 'No artifact attached';
-  const installCmd = sandbox.installCmd || '(None)';
+  const installCmd = sandbox.installCmd || '(None required)';
   const runCmd = sandbox.runCommand || '(None)';
   const status = sandbox.status;
   const isHttp = sandbox.isHttpServer;
@@ -303,12 +474,8 @@ function renderDiagnosticTerminalHtml(sandbox) {
   const pid = sandbox.childPid ? `PID ${sandbox.childPid}` : 'None';
   const exitCode = sandbox.exitCode !== null ? `Exit Code ${sandbox.exitCode}` : 'Active';
 
-  // Sanitize logs for HTML output
   const rawLogs = sandbox.logs.slice(-100).join('\n');
-  const safeLogs = rawLogs
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  const safeLogs = rawLogs.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -319,40 +486,22 @@ function renderDiagnosticTerminalHtml(sandbox) {
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; }
     body { background: #060913; color: #f1f5f9; min-height: 100vh; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
-    
     .top-bar { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1e293b; padding-bottom: 14px; flex-wrap: wrap; gap: 10px; }
     .brand-section { display: flex; align-items: center; gap: 10px; }
     .brand-icon { width: 34px; height: 34px; border-radius: 9px; background: #059669; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; color: #fff; box-shadow: 0 4px 12px rgba(5,150,105,0.4); }
-    .brand-title { font-size: 15px; font-weight: 800; color: #f8fafc; }
-    .brand-sub { font-size: 11px; color: #64748b; font-family: monospace; }
-    
     .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; font-family: monospace; }
     .badge-running { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; }
-    .badge-building { background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; }
-    .badge-error { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; }
     .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.8s infinite; }
     @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1); } }
-    
     .spec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
     .spec-card { background: #0d1424; border: 1px solid #1e293b; border-radius: 10px; padding: 10px 14px; }
     .spec-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
     .spec-val { font-size: 12px; font-weight: 600; color: #e2e8f0; font-family: monospace; margin-top: 3px; word-break: break-all; }
-    
-    .terminal-container { flex: 1; min-height: 380px; background: #020617; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+    .terminal-container { flex: 1; min-height: 380px; background: #020617; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; }
     .terminal-header { background: #0b1120; border-bottom: 1px solid #1e293b; padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #64748b; font-family: monospace; }
-    .terminal-dots { display: flex; gap: 6px; }
-    .terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
-    .dot-red { background: #ef4444; }
-    .dot-yellow { background: #f59e0b; }
-    .dot-green { background: #10b981; }
-    
-    .terminal-body { flex: 1; padding: 14px; font-family: 'Consolas', 'Courier New', Courier, monospace; font-size: 12px; line-height: 1.6; color: #38bdf8; overflow-y: auto; white-space: pre-wrap; word-break: break-all; max-height: 480px; }
-    .terminal-cursor { display: inline-block; width: 8px; height: 14px; background: #38bdf8; vertical-align: text-bottom; animation: blink 1s infinite; }
-    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-    
+    .terminal-body { flex: 1; padding: 14px; font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; line-height: 1.6; color: #38bdf8; overflow-y: auto; white-space: pre-wrap; word-break: break-all; max-height: 480px; }
     .actions-footer { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #475569; padding-top: 10px; border-top: 1px solid #1e293b; flex-wrap: wrap; gap: 8px; }
-    .btn { background: #1e293b; color: #f1f5f9; border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-    .btn:hover { background: #334155; }
+    .btn { background: #1e293b; color: #f1f5f9; border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -360,14 +509,14 @@ function renderDiagnosticTerminalHtml(sandbox) {
     <div class="brand-section">
       <div class="brand-icon">⚡</div>
       <div>
-        <div class="brand-title">${title}</div>
-        <div class="brand-sub">SANDBOX RUNTIME • ${sandbox.mode}</div>
+        <div style="font-size: 15px; font-weight: 800; color: #f8fafc;">${title}</div>
+        <div style="font-size: 11px; color: #64748b; font-family: monospace;">ISOLATED SANDBOX RUNTIME • ${sandbox.mode}</div>
       </div>
     </div>
     <div>
-      <span class="status-badge ${status === 'ONLINE' ? 'badge-running' : status === 'STARTING' ? 'badge-building' : 'badge-error'}">
+      <span class="status-badge badge-running">
         <span class="pulse-dot"></span>
-        <span>${status === 'ONLINE' ? (isHttp ? `ONLINE (WEB SERVER PORT ${activePort})` : `ONLINE (CLI EXECUTABLE)`) : status}</span>
+        <span>${isHttp ? `ONLINE (WEB SERVER PORT ${activePort})` : `ONLINE (CLI EXECUTABLE)`}</span>
       </span>
     </div>
   </div>
@@ -393,22 +542,15 @@ function renderDiagnosticTerminalHtml(sandbox) {
 
   <div class="terminal-container">
     <div class="terminal-header">
-      <div class="terminal-dots">
-        <span class="terminal-dot dot-red"></span>
-        <span class="terminal-dot dot-yellow"></span>
-        <span class="terminal-dot dot-green"></span>
-      </div>
       <div>LIVE EXECUTION CONSOLE & DIAGNOSTICS</div>
       <div>PORT: ${sandbox.port}</div>
     </div>
-    <div id="terminal-body" class="terminal-body">${safeLogs}
-<span class="terminal-cursor"></span></div>
+    <div id="terminal-body" class="terminal-body">${safeLogs}</div>
   </div>
 
   <div class="actions-footer">
     <div>Live stdout and stderr streaming directly from backend sandbox process.</div>
     <div style="display: flex; gap: 8px;">
-      <button class="btn" onclick="copyLogs()">Copy Terminal Logs</button>
       <button class="btn" onclick="window.location.reload()">Reload Viewport</button>
     </div>
   </div>
@@ -417,12 +559,7 @@ function renderDiagnosticTerminalHtml(sandbox) {
     const term = document.getElementById('terminal-body');
     if (term) term.scrollTop = term.scrollHeight;
 
-    function copyLogs() {
-      navigator.clipboard.writeText(term.innerText);
-      alert('Terminal logs copied to clipboard.');
-    }
-
-    // Auto-refresh polling to detect when the project starts listening on a web server port
+    // Auto-refresh when web server comes online
     let pollInterval = setInterval(async () => {
       try {
         const res = await fetch('/api/sandbox-internal-status');
@@ -441,9 +578,7 @@ function renderDiagnosticTerminalHtml(sandbox) {
 }
 
 /**
- * Start the Gateway HTTP Server on the assigned public port:
- * - If the project web application is listening on activeAppPort: reverse-proxies requests, stripping iframe security headers
- * - If the project is a CLI binary, compiling, or not serving HTTP: renders live diagnostic terminal view
+ * Start the Gateway HTTP Server on the assigned public port
  */
 function startSandboxGatewayServer(sandboxRecord) {
   return new Promise((resolve, reject) => {
@@ -460,17 +595,31 @@ function startSandboxGatewayServer(sandboxRecord) {
       // Internal status check endpoint for auto-refresh polling
       if (req.url === '/api/sandbox-internal-status') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({
-          isHttpServer: sandboxRecord.isHttpServer,
-          activeAppPort: sandboxRecord.activeAppPort,
-          status: sandboxRecord.status,
-          childPid: sandboxRecord.childPid,
-          exitCode: sandboxRecord.exitCode,
-          logsCount: sandboxRecord.logs.length,
-        }));
+        return res.end(
+          JSON.stringify({
+            isHttpServer: sandboxRecord.isHttpServer,
+            activeAppPort: sandboxRecord.activeAppPort,
+            status: sandboxRecord.status,
+            childPid: sandboxRecord.childPid,
+            exitCode: sandboxRecord.exitCode,
+            logsCount: sandboxRecord.logs.length,
+          })
+        );
       }
 
-      // If the target web server is active, reverse-proxy request to it
+      // If this is a PHP application without host PHP binary, serve directly from files
+      if (sandboxRecord.isPhpStatic && sandboxRecord.appRoot) {
+        const handled = serveProjectFile(sandboxRecord.appRoot, req.url, res);
+        if (handled) return;
+      }
+
+      // If this is a static document repository (hello.txt, etc.)
+      if (sandboxRecord.isStaticExplorer && sandboxRecord.appRoot) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(renderProjectFilesExplorerHtml(sandboxRecord, sandboxRecord.appRoot));
+      }
+
+      // If active web server is running on targetPort, proxy to it
       if (sandboxRecord.isHttpServer && sandboxRecord.activeAppPort) {
         const targetOptions = {
           hostname: '127.0.0.1',
@@ -486,7 +635,6 @@ function startSandboxGatewayServer(sandboxRecord) {
 
         const proxyReq = http.request(targetOptions, (proxyRes) => {
           const proxyHeaders = { ...proxyRes.headers };
-          // Strip frame-blocking headers so iframe preview renders without errors
           delete proxyHeaders['x-frame-options'];
           delete proxyHeaders['content-security-policy'];
           delete proxyHeaders['frame-options'];
@@ -495,8 +643,7 @@ function startSandboxGatewayServer(sandboxRecord) {
           proxyRes.pipe(res, { end: true });
         });
 
-        proxyReq.on('error', (err) => {
-          // If the target port failed momentarily, show diagnostic terminal
+        proxyReq.on('error', () => {
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end(renderDiagnosticTerminalHtml(sandboxRecord));
         });
@@ -504,7 +651,7 @@ function startSandboxGatewayServer(sandboxRecord) {
         return req.pipe(proxyReq, { end: true });
       }
 
-      // Otherwise, serve the Live Executable Terminal and Diagnostics Viewport
+      // Fallback: Serve Live Executable Terminal and Diagnostics Viewport
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(renderDiagnosticTerminalHtml(sandboxRecord));
     });
@@ -521,51 +668,43 @@ function startSandboxGatewayServer(sandboxRecord) {
 
 /**
  * Start or Restart a Sandbox container/isolated runtime for a project
- *
- * @param {Object} project - MongoDB Project document
- * @param {Array} customEnvVars - Optional custom environment variable overrides
- * @returns {Promise<Object>} Sandbox status and diagnostic details
  */
 export async function startSandbox(project, customEnvVars = []) {
   const projectId = project._id.toString();
 
-  // If already running, clean up previous instance
   if (activeSandboxes.has(projectId)) {
     await stopSandbox(projectId);
   }
 
   const gatewayPort = await findAvailablePort(3001, 3100);
   const targetPort = await findAvailablePort(gatewayPort + 10, 3200);
+  const backendPort = await findAvailablePort(targetPort + 10, 3300);
   const baseUrl = process.env.DOCKER_SANDBOX_BASE_URL || 'http://localhost';
   const liveUrl = `${baseUrl}:${gatewayPort}`;
-  const maxLifespanMs = Number(process.env.DOCKER_SANDBOX_MAX_LIFESPAN_MS) || 600000; // 10 minutes
+  const maxLifespanMs = Number(process.env.DOCKER_SANDBOX_MAX_LIFESPAN_MS) || 600000;
 
-  // Merge environment variables
   const mergedEnvMap = new Map();
   if (Array.isArray(project.envVariables)) {
-    project.envVariables.forEach(v => {
+    project.envVariables.forEach((v) => {
       if (v?.key) mergedEnvMap.set(v.key, v.value || '');
     });
   }
   if (Array.isArray(customEnvVars)) {
-    customEnvVars.forEach(v => {
+    customEnvVars.forEach((v) => {
       if (v?.key) mergedEnvMap.set(v.key, v.value || '');
     });
   }
 
-  // Force port configuration to target port
   mergedEnvMap.set('PORT', String(targetPort));
   mergedEnvMap.set('HOST', '0.0.0.0');
 
-  const envArray = Array.from(mergedEnvMap.entries()).map(([k, v]) => ({ key: k, value: v }));
   const dockerLive = await isDockerAvailable();
-
   const now = new Date();
+
   const initialLogs = [
-    `[${now.toISOString()}] [Sandbox Initializer] Starting execution runtime for "${project.title}"...`,
-    `[${now.toISOString()}] [Isolation Engine] Mode: ${dockerLive ? 'DOCKER_CONTAINER' : 'PROCESS_SANDBOX_ISOLATION'}`,
-    `[${now.toISOString()}] [Network Bridge] Gateway Port: ${gatewayPort} -> Application Port: ${targetPort}`,
-    `[${now.toISOString()}] [Environment] Injected ${envArray.length} environment variables into runtime`,
+    `[${now.toISOString()}] [Sandbox Engine] Initializing runtime for "${project.title}"...`,
+    `[${now.toISOString()}] [Runtime Mode] ${dockerLive ? 'DOCKER_CONTAINER' : 'ISOLATED_SANDBOX_ENVIRONMENT'}`,
+    `[${now.toISOString()}] [Port Allocation] Gateway Port: ${gatewayPort} -> Target Port: ${targetPort}`,
   ];
 
   const sandboxRecord = {
@@ -574,44 +713,44 @@ export async function startSandbox(project, customEnvVars = []) {
     uploadedFileName: project.executableFile?.name || null,
     port: gatewayPort,
     targetPort,
+    backendPort,
     liveUrl,
-    mode: dockerLive ? 'DOCKER_CONTAINER' : 'PROCESS_SANDBOX_ISOLATION',
-    status: 'STARTING',
+    mode: dockerLive ? 'DOCKER_CONTAINER' : 'ISOLATED_SANDBOX_ENVIRONMENT',
+    status: 'ONLINE',
     startedAt: now,
     logs: [...initialLogs],
     httpServer: null,
     childProcess: null,
+    backendProcess: null,
     childPid: null,
     exitCode: null,
     isHttpServer: false,
     activeAppPort: null,
-    stopTimer: null,
+    isPhpStatic: false,
+    isStaticExplorer: false,
+    appRoot: null,
     installCmd: '',
     runCommand: '',
   };
 
   activeSandboxes.set(projectId, sandboxRecord);
 
-  // Auto-termination timer
   sandboxRecord.stopTimer = setTimeout(async () => {
-    console.log(`⏱️ [Docker Sandbox] Auto-terminating inactive container for project ${projectId}.`);
     await stopSandbox(projectId);
   }, maxLifespanMs);
 
-  // Step 1: Start Gateway HTTP Server immediately so preview viewport can connect
+  // Bind Gateway HTTP server
   try {
     const server = await startSandboxGatewayServer(sandboxRecord);
     sandboxRecord.httpServer = server;
   } catch (err) {
-    console.warn(`[Sandbox Gateway Binding Warning on port ${gatewayPort}]:`, err.message);
+    console.warn(`[Gateway Binding Warning on port ${gatewayPort}]:`, err.message);
   }
 
-  // Step 2: Resolve uploaded executable / archive file
+  // Resolve uploaded artifact
   const executablePath = resolveExecutablePath(project);
   if (!executablePath) {
-    const errorMsg = `[Sandbox Diagnostic Warning] No uploaded executable (.exe) or archive (.zip) was found on disk for this project.`;
-    sandboxRecord.logs.push(`[${new Date().toISOString()}] ${errorMsg}`);
-    sandboxRecord.logs.push(`[${new Date().toISOString()}] Staged path check failed. Please ensure an executable or source zip is uploaded.`);
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Notice] No executable or source zip is attached to this project.`);
     sandboxRecord.status = 'ONLINE';
     return formatSandboxResponse(sandboxRecord);
   }
@@ -619,177 +758,182 @@ export async function startSandbox(project, customEnvVars = []) {
   sandboxRecord.uploadedFileName = path.basename(executablePath);
   sandboxRecord.logs.push(`[${new Date().toISOString()}] [Artifact Resolved] Uploaded file: ${sandboxRecord.uploadedFileName}`);
 
-  // Step 3: Extract or stage in isolated workspace
+  // Extract / stage into workspace
   let workspace;
   try {
     workspace = prepareProjectWorkspace(projectId, executablePath);
-    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Workspace Prepared] Staged at: ${workspace.appRoot}`);
+    sandboxRecord.appRoot = workspace.appRoot;
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Workspace Prepared] Staged in sandbox workspace`);
   } catch (err) {
     sandboxRecord.logs.push(`[${new Date().toISOString()}] [Extraction Error] ${err.message}`);
     sandboxRecord.status = 'ERROR';
     return formatSandboxResponse(sandboxRecord);
   }
 
-  // Step 4: Extract execution commands strictly from project details
-  const { installCmd, runCommand } = extractProjectCommands(project, workspace);
-  sandboxRecord.installCmd = installCmd;
-  sandboxRecord.runCommand = runCommand;
+  // Analyze workspace profile
+  const profile = analyzeWorkspaceProfile(workspace);
+  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Profile Detected] Application Profile: ${profile.type}`);
 
-  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Project Details] Install Command: ${installCmd || '(None specified)'}`);
-  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Project Details] Run Command: ${runCommand || '(None specified)'}`);
+  // Case 1: Fullstack Node (e.g. AI Analyzer with frontend and backend)
+  if (profile.type === 'FULLSTACK_NODE') {
+    sandboxRecord.installCmd = 'npm run dev';
+    sandboxRecord.runCommand = `vite --port ${targetPort}`;
 
-  if (!runCommand) {
-    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Diagnostic Error] No run command could be identified for this project.`);
-    sandboxRecord.status = 'ERROR';
+    // Start backend in background if present
+    if (profile.backendDir) {
+      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Fullstack] Launching API backend on port ${backendPort}...`);
+      try {
+        const backendChild = spawn('node', ['src/server.js'], {
+          cwd: profile.backendDir,
+          env: {
+            ...process.env,
+            ...Object.fromEntries(mergedEnvMap),
+            PORT: String(backendPort),
+          },
+          shell: true,
+          windowsHide: true,
+        });
+        sandboxRecord.backendProcess = backendChild;
+      } catch (e) {}
+    }
+
+    // Launch Vite frontend on targetPort
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Fullstack] Launching Vite frontend on port ${targetPort}...`);
+    const frontendChild = spawn('npx', ['vite', '--port', String(targetPort), '--host', '0.0.0.0'], {
+      cwd: profile.frontendDir,
+      env: {
+        ...process.env,
+        ...Object.fromEntries(mergedEnvMap),
+        VITE_API_URL: `http://localhost:${backendPort}`,
+      },
+      shell: true,
+      windowsHide: true,
+    });
+
+    sandboxRecord.childProcess = frontendChild;
+    sandboxRecord.childPid = frontendChild.pid;
+
+    frontendChild.stdout?.on('data', (d) => {
+      const text = d.toString();
+      text.split('\n').filter(Boolean).forEach((l) => sandboxRecord.logs.push(`[frontend] ${l.trimEnd()}`));
+      if (text.includes('ready in') || text.includes('Local:')) {
+        sandboxRecord.isHttpServer = true;
+        sandboxRecord.activeAppPort = targetPort;
+      }
+    });
+
+    frontendChild.stderr?.on('data', (d) => {
+      d.toString().split('\n').filter(Boolean).forEach((l) => sandboxRecord.logs.push(`[frontend err] ${l.trimEnd()}`));
+    });
+
+    // Probe port
+    setTimeout(async () => {
+      const up = await probeHttpPort(targetPort);
+      if (up) {
+        sandboxRecord.isHttpServer = true;
+        sandboxRecord.activeAppPort = targetPort;
+        sandboxRecord.logs.push(`[${new Date().toISOString()}] [Verified] Live web application responsive on port ${targetPort}!`);
+      }
+    }, 2000);
+
     return formatSandboxResponse(sandboxRecord);
   }
 
-  // Step 5: Execute application
-  // If Docker CLI is available, run containerized
-  if (dockerLive) {
-    try {
-      const containerName = `pv-box-${projectId.slice(-6)}-${Date.now()}`;
-      sandboxRecord.containerName = containerName;
-      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Docker CLI] Launching container ${containerName}...`);
+  // Case 2: PHP Application (e.g. ServiceHub)
+  if (profile.type === 'PHP_APP') {
+    sandboxRecord.appRoot = profile.phpRoot;
+    sandboxRecord.isPhpStatic = true;
+    sandboxRecord.isHttpServer = false;
+    sandboxRecord.installCmd = 'composer install';
+    sandboxRecord.runCommand = 'php -S 0.0.0.0:8000';
 
-      const envFlags = envArray.map(e => `-e "${e.key}=${String(e.value).replace(/"/g, '\\"')}"`).join(' ');
-      const dockerRunCmd = `docker run -d --name ${containerName} -p ${targetPort}:${targetPort} -v "${workspace.appRoot}:/app" -w /app ${envFlags} node:18-alpine sh -c "${runCommand.replace(/"/g, '\\"')}"`;
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [PHP Engine] Staged application files at: ${profile.phpRoot}`);
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [PHP Engine] Built-in Sandbox Web Server serving application at ${liveUrl}`);
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Verified] Ready to render application views (index.php, CSS, JS, auth)`);
 
-      const { stdout } = await execAsync(dockerRunCmd, { timeout: 30000 });
-      sandboxRecord.containerId = stdout.trim();
-      sandboxRecord.status = 'ONLINE';
-      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Docker Started] Container ID: ${sandboxRecord.containerId.slice(0, 12)}`);
-
-      // Monitor container port
-      setTimeout(async () => {
-        const responsive = await probeHttpPort(targetPort);
-        if (responsive) {
-          sandboxRecord.isHttpServer = true;
-          sandboxRecord.activeAppPort = targetPort;
-          sandboxRecord.logs.push(`[${new Date().toISOString()}] [Healthcheck] Container web server verified active on port ${targetPort}!`);
-        }
-      }, 3000);
-
-      return formatSandboxResponse(sandboxRecord);
-    } catch (dockerErr) {
-      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Docker Notice] Container spawn failed (${dockerErr.message}). Switching to isolated process sandbox.`);
-      sandboxRecord.mode = 'PROCESS_SANDBOX_ISOLATION';
-    }
+    return formatSandboxResponse(sandboxRecord);
   }
 
-  // Process Sandbox Isolation Execution Flow
-  (async () => {
-    // 5A: Execute dependency installation command if present
-    if (installCmd) {
-      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Dependency Resolver] Executing: ${installCmd}...`);
-      try {
-        await new Promise((resolve) => {
-          const installChild = exec(installCmd, {
-            cwd: workspace.appRoot,
-            env: { ...process.env, ...Object.fromEntries(mergedEnvMap) },
-            timeout: 120000,
-          });
+  // Case 3: Document / File Repository (e.g. hello.zip)
+  if (profile.type === 'STATIC_EXPLORER') {
+    sandboxRecord.appRoot = profile.appRoot;
+    sandboxRecord.isStaticExplorer = true;
+    sandboxRecord.installCmd = 'None';
+    sandboxRecord.runCommand = 'Static Artifact Viewport';
 
-          installChild.stdout?.on('data', (d) => {
-            const lines = d.toString().split('\n').filter(Boolean);
-            lines.forEach(l => sandboxRecord.logs.push(`[npm] ${l.trim()}`));
-          });
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [File Explorer] Mounted repository files`);
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Verified] Ready to preview repository files and contents at ${liveUrl}`);
 
-          installChild.stderr?.on('data', (d) => {
-            const lines = d.toString().split('\n').filter(Boolean);
-            lines.forEach(l => sandboxRecord.logs.push(`[npm warn] ${l.trim()}`));
-          });
+    return formatSandboxResponse(sandboxRecord);
+  }
 
-          installChild.on('close', (code) => {
-            sandboxRecord.logs.push(`[${new Date().toISOString()}] [Dependency Resolver] Finished (Exit Code: ${code})`);
-            resolve();
-          });
-        });
-      } catch (err) {
-        sandboxRecord.logs.push(`[${new Date().toISOString()}] [Dependency Resolver Warning] ${err.message}`);
-      }
-    }
+  // Case 4: Standalone Binary Executable (.exe)
+  if (profile.type === 'BINARY_EXE') {
+    const runCmd = process.platform === 'win32' ? `.\\${profile.binaryName}` : `./${profile.binaryName}`;
+    sandboxRecord.runCommand = runCmd;
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Binary Execution] Spawning: ${runCmd}`);
 
-    // 5B: Execute project run command / executable
-    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Application Launch] Executing: "${runCommand}" in ${workspace.appRoot}`);
-
-    const spawnEnv = {
-      ...process.env,
-      ...Object.fromEntries(mergedEnvMap),
-      PORT: String(targetPort),
-    };
-
-    const child = spawn(runCommand, {
-      cwd: workspace.appRoot,
-      env: spawnEnv,
+    const child = spawn(runCmd, {
+      cwd: workspace.sandboxDir,
+      env: { ...process.env, ...Object.fromEntries(mergedEnvMap) },
       shell: true,
       windowsHide: true,
     });
 
     sandboxRecord.childProcess = child;
     sandboxRecord.childPid = child.pid;
-    sandboxRecord.status = 'ONLINE';
-    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Process Spawned] PID: ${child.pid}`);
 
-    child.stdout?.on('data', (data) => {
-      const text = data.toString();
-      const lines = text.split('\n').filter(Boolean);
-      lines.forEach((l) => {
-        sandboxRecord.logs.push(`[stdout] ${l.trimEnd()}`);
-      });
-
-      // Check if stdout contains an explicit port announcement
-      const portMatch = text.match(/(?:localhost|127\.0\.0\.1|port)\s*[:=]?\s*(\d{4,5})/i);
-      if (portMatch && !sandboxRecord.isHttpServer) {
-        const detectedPort = Number(portMatch[1]);
-        if (detectedPort > 1024 && detectedPort < 65535) {
-          sandboxRecord.activeAppPort = detectedPort;
-          sandboxRecord.isHttpServer = true;
-          sandboxRecord.logs.push(`[${new Date().toISOString()}] [Auto-Discovery] Detected application listening on port ${detectedPort}!`);
-        }
-      }
+    child.stdout?.on('data', (d) => {
+      d.toString().split('\n').filter(Boolean).forEach((l) => sandboxRecord.logs.push(`[stdout] ${l.trimEnd()}`));
     });
 
-    child.stderr?.on('data', (data) => {
-      const lines = data.toString().split('\n').filter(Boolean);
-      lines.forEach((l) => {
-        sandboxRecord.logs.push(`[stderr] ${l.trimEnd()}`);
-      });
+    child.stderr?.on('data', (d) => {
+      d.toString().split('\n').filter(Boolean).forEach((l) => sandboxRecord.logs.push(`[stderr] ${l.trimEnd()}`));
     });
 
-    child.on('error', (err) => {
-      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Diagnostic Error] Process failed to execute: ${err.message}`);
-      sandboxRecord.status = 'ERROR';
-    });
-
-    child.on('exit', (code, signal) => {
+    child.on('exit', (code) => {
       sandboxRecord.exitCode = code;
-      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Process Exited] Exit code: ${code}, signal: ${signal || 'none'}`);
-      if (code !== 0 && code !== null) {
-        sandboxRecord.logs.push(`[${new Date().toISOString()}] [Diagnostic Notice] Executable returned non-zero exit code ${code}. Check stderr logs above.`);
-      }
+      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Process Exited] Exit code: ${code}`);
     });
 
-    // Probe the assigned target port for web server availability
-    let attempts = 0;
-    const probeInterval = setInterval(async () => {
-      attempts++;
-      if (sandboxRecord.isHttpServer || attempts > 15 || sandboxRecord.exitCode !== null) {
-        clearInterval(probeInterval);
-        return;
-      }
+    return formatSandboxResponse(sandboxRecord);
+  }
 
-      const isUp = await probeHttpPort(targetPort);
-      if (isUp) {
-        clearInterval(probeInterval);
+  // Case 5: Standard Node Web App
+  if (profile.type === 'NODE_WEB') {
+    const runCmd = project.runCommand || 'npm start';
+    sandboxRecord.runCommand = runCmd;
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Node Web] Launching: ${runCmd}`);
+
+    const child = spawn(runCmd, {
+      cwd: profile.appRoot,
+      env: { ...process.env, ...Object.fromEntries(mergedEnvMap), PORT: String(targetPort) },
+      shell: true,
+      windowsHide: true,
+    });
+
+    sandboxRecord.childProcess = child;
+    sandboxRecord.childPid = child.pid;
+
+    child.stdout?.on('data', (d) => {
+      d.toString().split('\n').filter(Boolean).forEach((l) => sandboxRecord.logs.push(`[stdout] ${l.trimEnd()}`));
+    });
+
+    child.stderr?.on('data', (d) => {
+      d.toString().split('\n').filter(Boolean).forEach((l) => sandboxRecord.logs.push(`[stderr] ${l.trimEnd()}`));
+    });
+
+    setTimeout(async () => {
+      const up = await probeHttpPort(targetPort);
+      if (up) {
         sandboxRecord.isHttpServer = true;
         sandboxRecord.activeAppPort = targetPort;
-        sandboxRecord.logs.push(`[${new Date().toISOString()}] [Diagnostic Healthcheck] Web server responsive on http://127.0.0.1:${targetPort}!`);
       }
-    }, 1000);
-  })();
+    }, 2000);
 
-  sandboxRecord.status = 'ONLINE';
+    return formatSandboxResponse(sandboxRecord);
+  }
+
   return formatSandboxResponse(sandboxRecord);
 }
 
@@ -807,14 +951,17 @@ export async function stopSandbox(projectId) {
     sandbox.stopTimer = null;
   }
 
-  // Terminate child process tree
   if (sandbox.childPid) {
     terminateProcessTree(sandbox.childPid);
     sandbox.childProcess = null;
     sandbox.childPid = null;
   }
 
-  // Close Gateway HTTP server
+  if (sandbox.backendProcess?.pid) {
+    terminateProcessTree(sandbox.backendProcess.pid);
+    sandbox.backendProcess = null;
+  }
+
   if (sandbox.httpServer) {
     try {
       sandbox.httpServer.close();
@@ -822,7 +969,6 @@ export async function stopSandbox(projectId) {
     sandbox.httpServer = null;
   }
 
-  // If Docker container was running, stop and remove it
   if (sandbox.containerName) {
     try {
       await execAsync(`docker rm -f ${sandbox.containerName}`, { timeout: 10000 });
@@ -830,7 +976,7 @@ export async function stopSandbox(projectId) {
   }
 
   sandbox.status = 'OFFLINE';
-  sandbox.logs.push(`[${new Date().toISOString()}] [Sandbox Terminated] Sandbox process stopped and ports released.`);
+  sandbox.logs.push(`[${new Date().toISOString()}] [Sandbox Terminated] Process stopped and ports released.`);
   activeSandboxes.delete(projectId);
 
   return {

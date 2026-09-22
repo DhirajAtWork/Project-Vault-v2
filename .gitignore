@@ -21,4 +21,4 @@ Thumbs.db
 # Uploaded artifacts
 backend/uploads/executables/*
 !backend/uploads/executables/.gitkeep
-
+backend/sandboxes/

@@ -1,9 +1,10 @@
-import { exec } from 'child_process';
+import { exec, spawn } from 'child_process';
 import util from 'util';
 import net from 'net';
 import http from 'http';
 import path from 'path';
 import fs from 'fs';
+import AdmZip from 'adm-zip';
 
 const execAsync = util.promisify(exec);
 
@@ -24,14 +25,17 @@ export async function isDockerAvailable() {
 }
 
 /**
- * Find an available TCP port on the host system within the configured range
+ * Find an available TCP port on the host system within a specified range
+ */
+/**
+ * Find an available TCP port on the host system within a specified range
  */
 async function findAvailablePort(startPort = 3001, endPort = 3100) {
   const isPortTaken = (port) => {
     return new Promise((resolve) => {
       // Check in-memory registry first
       for (const sandbox of activeSandboxes.values()) {
-        if (sandbox.port === port && sandbox.status === 'ONLINE') {
+        if ((sandbox.port === port || sandbox.targetPort === port || sandbox.activeAppPort === port) && sandbox.status !== 'OFFLINE') {
           return resolve(true);
         }
       }
@@ -46,317 +50,481 @@ async function findAvailablePort(startPort = 3001, endPort = 3100) {
     });
   };
 
-  const start = Number(process.env.DOCKER_SANDBOX_PORT_START) || startPort;
-  const end = Number(process.env.DOCKER_SANDBOX_PORT_END) || endPort;
-
-  for (let p = start; p <= end; p++) {
+  for (let p = startPort; p <= endPort; p++) {
     const taken = await isPortTaken(p);
     if (!taken) return p;
   }
-  return start; // Fallback
+  return startPort;
 }
 
 /**
- * Detect runtime stack based on project metadata
+ * Terminate a process and all its child processes cleanly (cross-platform)
  */
-function detectRuntimeStack(project) {
-  const stack = (project.majorStack || '').toLowerCase();
-  const tags = Array.isArray(project.tags) ? project.tags.map(t => t.toLowerCase()) : [];
+function terminateProcessTree(pid) {
+  if (!pid) return;
+  if (process.platform === 'win32') {
+    try {
+      exec(`taskkill /pid ${pid} /T /F`, () => {});
+    } catch (e) {}
+  } else {
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch (e) {
+      try {
+        process.kill(pid, 'SIGKILL');
+      } catch (e2) {}
+    }
+  }
+}
 
-  const isPython = (
-    stack.includes('python') ||
-    stack.includes('django') ||
-    stack.includes('fastapi') ||
-    stack.includes('flask') ||
-    tags.includes('python') ||
-    tags.includes('fastapi') ||
-    tags.includes('pytorch')
-  );
+/**
+ * Probe a TCP port or HTTP endpoint to check if an application web server is responsive
+ */
+function probeHttpPort(port, timeoutMs = 1000) {
+  return new Promise((resolve) => {
+    const req = http.get(
+      {
+        hostname: '127.0.0.1',
+        port,
+        path: '/',
+        timeout: timeoutMs,
+      },
+      (res) => {
+        res.resume(); // consume response data to free up memory
+        resolve(true);
+      }
+    );
 
-  if (isPython) {
-    return {
-      runtime: 'python',
-      defaultImage: 'python:3.11-slim',
-      defaultPort: 8000,
-      installCmd: project.installCmd || 'pip install -r requirements.txt',
-      runCommand: project.runCommand || 'uvicorn main:app --host 0.0.0.0 --port 8000',
-    };
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => {
+      req.destroy();
+      resolve(false);
+    });
+  });
+}
+
+/**
+ * Resolve the local path of the uploaded project executable or archive file
+ */
+function resolveExecutablePath(project) {
+  if (!project.executableFile) return null;
+  const { url, name } = project.executableFile;
+
+  const candidates = [];
+  if (url) {
+    const cleanRel = url.replace(/^https?:\/\/[^/]+\//, '').replace(/^\//, '');
+    candidates.push(path.resolve(cleanRel));
+    candidates.push(path.resolve(process.cwd(), cleanRel));
+    candidates.push(path.resolve(process.cwd(), 'uploads', 'executables', path.basename(cleanRel)));
+    candidates.push(path.resolve(process.cwd(), 'backend', cleanRel));
+  }
+  if (name) {
+    candidates.push(path.resolve(process.cwd(), 'uploads', 'executables', name));
+    candidates.push(path.resolve('uploads', 'executables', name));
+    candidates.push(path.resolve(process.cwd(), 'backend', 'uploads', 'executables', name));
   }
 
-  // Default Node.js / Fullstack Web runtime
-  return {
-    runtime: 'node',
-    defaultImage: 'node:18-alpine',
-    defaultPort: 3000,
-    installCmd: project.installCmd || 'npm install',
-    runCommand: project.runCommand || 'npm start',
-  };
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return null;
 }
 
 /**
- * Generate a responsive, rich interactive HTML web page for the live container
+ * Locate the primary runnable directory inside an extracted workspace
  */
-function generateSandboxHtml(project, port, envArray, runtimeInfo) {
-  const title = project.title || 'Project Vault Sandbox Application';
-  const description = project.description || 'Live sandboxed container execution with real-time environment variables and port mapping.';
-  const tagline = project.tagline || 'Interactive Container Runtime Environment';
-  const stack = project.majorStack || `${runtimeInfo.runtime.toUpperCase()} Fullstack`;
-  const memoryLimit = process.env.DOCKER_SANDBOX_MEMORY_LIMIT || '512m';
-  const cpuLimit = process.env.DOCKER_SANDBOX_CPU_LIMIT || '1.0';
-  const liveUrl = project.liveUrl || '';
+function findRunnableSubdir(rootDir) {
+  const isRunnable = (dir) => {
+    return (
+      fs.existsSync(path.join(dir, 'package.json')) ||
+      fs.existsSync(path.join(dir, 'requirements.txt')) ||
+      fs.existsSync(path.join(dir, 'composer.json')) ||
+      fs.existsSync(path.join(dir, 'index.php')) ||
+      fs.existsSync(path.join(dir, 'main.py')) ||
+      fs.existsSync(path.join(dir, 'app.py'))
+    );
+  };
+
+  if (isRunnable(rootDir)) return rootDir;
+
+  try {
+    const entries = fs.readdirSync(rootDir);
+    // Priority order for candidate subdirectories
+    const preferred = ['backend', 'server', 'service-hub', 'app', 'src', 'frontend'];
+    for (const name of preferred) {
+      const candidate = path.join(rootDir, name);
+      if (fs.existsSync(candidate) && fs.statSync(candidate).isDirectory() && isRunnable(candidate)) {
+        return candidate;
+      }
+    }
+
+    for (const entry of entries) {
+      const sub = path.join(rootDir, entry);
+      if (fs.statSync(sub).isDirectory() && isRunnable(sub)) {
+        return sub;
+      }
+    }
+  } catch (e) {}
+
+  return rootDir;
+}
+
+/**
+ * Prepare an isolated sandbox workspace for the project:
+ * - Unzips project archive into sandbox/src
+ * - Or copies standalone binary .exe into sandbox/src
+ */
+function prepareProjectWorkspace(projectId, archiveOrExePath) {
+  const sandboxDir = path.resolve('sandboxes', projectId);
+  if (fs.existsSync(sandboxDir)) {
+    try {
+      fs.rmSync(sandboxDir, { recursive: true, force: true });
+    } catch (e) {}
+  }
+  fs.mkdirSync(sandboxDir, { recursive: true });
+
+  const fileName = path.basename(archiveOrExePath);
+  const ext = path.extname(archiveOrExePath).toLowerCase();
+  const isZip = ext === '.zip';
+
+  if (isZip) {
+    const zip = new AdmZip(archiveOrExePath);
+    zip.extractAllTo(sandboxDir, true);
+
+    // Detect if archive extracted into a single wrapper folder
+    const entries = fs.readdirSync(sandboxDir);
+    let appRoot = sandboxDir;
+    if (entries.length === 1) {
+      const single = path.join(sandboxDir, entries[0]);
+      if (fs.statSync(single).isDirectory()) {
+        appRoot = single;
+      }
+    }
+
+    // Intelligently find directory with package.json / requirements / index.php
+    appRoot = findRunnableSubdir(appRoot);
+
+    return { sandboxDir, appRoot, isBinary: false, binaryName: null };
+  }
+
+  // Standalone executable binary (.exe or other)
+  const destPath = path.join(sandboxDir, fileName);
+  fs.copyFileSync(archiveOrExePath, destPath);
+  return { sandboxDir, appRoot: sandboxDir, isBinary: true, binaryName: fileName, binaryPath: destPath };
+}
+
+/**
+ * Retrieve and deduce all execution commands strictly from project details
+ */
+function extractProjectCommands(project, workspace) {
+  let installCmd = (project.installCmd || '').trim();
+  let runCommand = (project.runCommand || '').trim();
+
+  // If commands are not directly stored on project root, check aiEvaluation.RUN_COMMANDS
+  const aiCommands = Array.isArray(project.aiEvaluation?.RUN_COMMANDS)
+    ? project.aiEvaluation.RUN_COMMANDS.filter(Boolean)
+    : [];
+
+  if (!installCmd && aiCommands.length > 1) {
+    const candidate = aiCommands[0].trim();
+    if (/^(npm|yarn|pnpm|pip|composer)\s+(install|i|add)/i.test(candidate)) {
+      installCmd = candidate;
+    }
+  }
+
+  if (!runCommand && aiCommands.length > 0) {
+    const candidate = aiCommands.length > 1 ? aiCommands[1].trim() : aiCommands[0].trim();
+    if (!/^(npm|yarn|pnpm|pip|composer)\s+(install|i|add)/i.test(candidate)) {
+      runCommand = candidate;
+    }
+  }
+
+  // If this is a standalone binary executable (.exe)
+  if (workspace.isBinary && workspace.binaryName) {
+    if (!runCommand) {
+      runCommand = process.platform === 'win32'
+        ? `.\\${workspace.binaryName}`
+        : `./${workspace.binaryName}`;
+    }
+    return { installCmd: '', runCommand };
+  }
+
+  // Check filesystem markers in appRoot for intelligent fallbacks if empty
+  const appRoot = workspace.appRoot;
+  if (!installCmd && appRoot && fs.existsSync(appRoot)) {
+    if (fs.existsSync(path.join(appRoot, 'package.json'))) {
+      installCmd = 'npm install';
+    } else if (fs.existsSync(path.join(appRoot, 'requirements.txt'))) {
+      installCmd = 'pip install -r requirements.txt';
+    } else if (fs.existsSync(path.join(appRoot, 'composer.json'))) {
+      installCmd = 'composer install';
+    }
+  }
+
+  if (!runCommand && appRoot && fs.existsSync(appRoot)) {
+    if (fs.existsSync(path.join(appRoot, 'package.json'))) {
+      try {
+        const pkg = JSON.parse(fs.readFileSync(path.join(appRoot, 'package.json'), 'utf8'));
+        if (pkg.scripts?.dev) {
+          runCommand = 'npm run dev';
+        } else if (pkg.scripts?.start) {
+          runCommand = 'npm start';
+        } else if (pkg.main) {
+          runCommand = `node ${pkg.main}`;
+        } else {
+          runCommand = 'node index.js';
+        }
+      } catch (e) {
+        runCommand = 'npm start';
+      }
+    } else if (fs.existsSync(path.join(appRoot, 'main.py'))) {
+      runCommand = 'python main.py';
+    } else if (fs.existsSync(path.join(appRoot, 'app.py'))) {
+      runCommand = 'python app.py';
+    } else if (fs.existsSync(path.join(appRoot, 'index.php'))) {
+      runCommand = 'php -S 0.0.0.0:8000';
+    }
+  }
+
+  return { installCmd, runCommand };
+}
+
+/**
+ * Render the live terminal and diagnostics viewport for applications, binaries, and build steps
+ */
+function renderDiagnosticTerminalHtml(sandbox) {
+  const title = sandbox.projectTitle || 'Project Vault Sandbox';
+  const binaryOrArchive = sandbox.uploadedFileName || 'No artifact attached';
+  const installCmd = sandbox.installCmd || '(None)';
+  const runCmd = sandbox.runCommand || '(None)';
+  const status = sandbox.status;
+  const isHttp = sandbox.isHttpServer;
+  const activePort = sandbox.activeAppPort || sandbox.targetPort || sandbox.port;
+  const pid = sandbox.childPid ? `PID ${sandbox.childPid}` : 'None';
+  const exitCode = sandbox.exitCode !== null ? `Exit Code ${sandbox.exitCode}` : 'Active';
+
+  // Sanitize logs for HTML output
+  const rawLogs = sandbox.logs.slice(-100).join('\n');
+  const safeLogs = rawLogs
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${title} - Docker Sandbox</title>
+  <title>${title} - Application Diagnostics</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
-    body { background-color: #0b1120; color: #f1f5f9; min-height: 100vh; padding: 24px; display: flex; flex-direction: column; gap: 20px; }
-    .header { display: flex; align-items: center; justify-content: space-between; border-b: 1px solid #1e293b; padding-bottom: 16px; flex-wrap: gap: 12px; }
-    .brand { display: flex; align-items: center; gap: 10px; }
-    .brand-icon { width: 36px; height: 36px; border-radius: 10px; background: #059669; display: flex; align-items: center; justify-content: center; font-weight: 900; color: #fff; font-size: 18px; box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4); }
-    .brand-text { font-size: 16px; font-weight: 800; letter-spacing: -0.5px; color: #ffffff; }
-    .status-badge { display: inline-flex; align-items: center; gap: 6px; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 9999px; font-family: monospace; }
-    .pulse-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 10px #10b981; animation: pulse 1.8s infinite; }
-    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.85); } 100% { opacity: 1; transform: scale(1); } }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; }
+    body { background: #060913; color: #f1f5f9; min-height: 100vh; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
     
-    .hero { background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%); border: 1px solid #334155; border-radius: 20px; padding: 28px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-    .hero-title { font-size: 26px; font-weight: 800; color: #f8fafc; margin-bottom: 6px; }
-    .hero-tagline { font-size: 13px; font-weight: 600; color: #34d399; margin-bottom: 12px; }
-    .hero-desc { font-size: 13px; color: #94a3b8; line-height: 1.6; max-width: 800px; margin-bottom: 20px; }
+    .top-bar { display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1e293b; padding-bottom: 14px; flex-wrap: wrap; gap: 10px; }
+    .brand-section { display: flex; align-items: center; gap: 10px; }
+    .brand-icon { width: 34px; height: 34px; border-radius: 9px; background: #059669; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; color: #fff; box-shadow: 0 4px 12px rgba(5,150,105,0.4); }
+    .brand-title { font-size: 15px; font-weight: 800; color: #f8fafc; }
+    .brand-sub { font-size: 11px; color: #64748b; font-family: monospace; }
     
-    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
-    .meta-card { background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; border-radius: 12px; padding: 12px 14px; }
-    .meta-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
-    .meta-val { font-size: 13px; font-weight: 700; color: #e2e8f0; font-family: monospace; margin-top: 4px; }
+    .status-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 9999px; font-size: 11px; font-weight: 700; font-family: monospace; }
+    .badge-running { background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399; }
+    .badge-building { background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; }
+    .badge-error { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #f87171; }
+    .pulse-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 1.8s infinite; }
+    @keyframes pulse { 0% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.8); } 100% { opacity: 1; transform: scale(1); } }
     
-    .panel { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 20px; }
-    .panel-title { font-size: 14px; font-weight: 700; color: #f8fafc; margin-bottom: 12px; display: flex; align-items: center; justify-content: space-between; }
-    .btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-    .btn { background: #1e293b; color: #f1f5f9; border: 1px solid #334155; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
-    .btn:hover { background: #334155; border-color: #64748b; }
-    .btn-primary { background: #059669; border-color: #10b981; color: #ffffff; }
-    .btn-primary:hover { background: #047857; }
+    .spec-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
+    .spec-card { background: #0d1424; border: 1px solid #1e293b; border-radius: 10px; padding: 10px 14px; }
+    .spec-label { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; }
+    .spec-val { font-size: 12px; font-weight: 600; color: #e2e8f0; font-family: monospace; margin-top: 3px; word-break: break-all; }
     
-    .output-box { background: #020617; border: 1px solid #1e293b; border-radius: 10px; padding: 14px; font-family: 'Courier New', Courier, monospace; font-size: 12px; color: #38bdf8; max-height: 220px; overflow-y: auto; white-space: pre-wrap; line-height: 1.5; }
-    .env-tag { display: inline-block; background: #1e293b; border: 1px solid #334155; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-family: monospace; color: #a5f3fc; margin: 3px; }
-    .footer { text-align: center; font-size: 11px; color: #475569; margin-top: auto; padding-top: 16px; border-top: 1px solid #1e293b; }
+    .terminal-container { flex: 1; min-height: 380px; background: #020617; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.6); }
+    .terminal-header { background: #0b1120; border-bottom: 1px solid #1e293b; padding: 8px 14px; display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #64748b; font-family: monospace; }
+    .terminal-dots { display: flex; gap: 6px; }
+    .terminal-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #f59e0b; }
+    .dot-green { background: #10b981; }
+    
+    .terminal-body { flex: 1; padding: 14px; font-family: 'Consolas', 'Courier New', Courier, monospace; font-size: 12px; line-height: 1.6; color: #38bdf8; overflow-y: auto; white-space: pre-wrap; word-break: break-all; max-height: 480px; }
+    .terminal-cursor { display: inline-block; width: 8px; height: 14px; background: #38bdf8; vertical-align: text-bottom; animation: blink 1s infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+    
+    .actions-footer { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #475569; padding-top: 10px; border-top: 1px solid #1e293b; flex-wrap: wrap; gap: 8px; }
+    .btn { background: #1e293b; color: #f1f5f9; border: 1px solid #334155; padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn:hover { background: #334155; }
   </style>
 </head>
 <body>
-  <div class="header">
-    <div class="brand">
+  <div class="top-bar">
+    <div class="brand-section">
       <div class="brand-icon">⚡</div>
       <div>
-        <div class="brand-text">Project Vault Container Sandbox</div>
-        <div style="font-size: 10px; color: #64748b; font-family: monospace;">PORT ${port} • ${runtimeInfo.runtime.toUpperCase()} RUNTIME</div>
+        <div class="brand-title">${title}</div>
+        <div class="brand-sub">SANDBOX RUNTIME • ${sandbox.mode}</div>
       </div>
-    </div>
-    <div style="display: flex; align-items: center; gap: 10px;">
-      <span class="status-badge">
-        <span class="pulse-dot"></span>
-        <span>ONLINE (PORT ${port})</span>
-      </span>
-      ${liveUrl ? `<a href="${liveUrl}" target="_blank" class="btn btn-primary" style="text-decoration: none; padding: 4px 10px; font-size: 11px;">External Live Demo ↗</a>` : ''}
-    </div>
-  </div>
-
-  <div class="hero">
-    <div class="hero-title">${title}</div>
-    <div class="hero-tagline">${tagline}</div>
-    <div class="hero-desc">${description}</div>
-
-    <div class="meta-grid">
-      <div class="meta-card">
-        <div class="meta-label">Primary Stack</div>
-        <div class="meta-val">${stack}</div>
-      </div>
-      <div class="meta-card">
-        <div class="meta-label">Assigned Port</div>
-        <div class="meta-val">0.0.0.0:${port}</div>
-      </div>
-      <div class="meta-card">
-        <div class="meta-label">Memory Quota</div>
-        <div class="meta-val">${memoryLimit} (Allocated)</div>
-      </div>
-      <div class="meta-card">
-        <div class="meta-label">CPU Limit</div>
-        <div class="meta-val">${cpuLimit} Core</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-title">
-      <span>Interactive Container Console & API Explorer</span>
-      <span style="font-size: 11px; color: #64748b; font-weight: normal;">Live Response Output</span>
-    </div>
-    <div class="btn-group">
-      <button class="btn btn-primary" onclick="testHealth()">Healthcheck (GET /api/health)</button>
-      <button class="btn" onclick="testEnv()">Inspect Env Variables (/api/env)</button>
-      <button class="btn" onclick="testInfo()">Project Metadata (/api/info)</button>
-      <button class="btn" onclick="testMetrics()">Container Metrics</button>
-      <button class="btn" onclick="clearOutput()">Clear</button>
-    </div>
-    <div id="output" class="output-box">// Container initialized on port ${port}.
-// Click any endpoint above to dispatch real-time HTTP requests to this sandbox!</div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-title">
-      <span>Injected Environment Variables (${envArray.length})</span>
     </div>
     <div>
-      ${envArray.length > 0 ? envArray.map(e => `<span class="env-tag">${e.key}=${e.value ? '••••' : '(empty)'}</span>`).join('') : '<span style="color: #64748b; font-size: 12px;">No custom environment variables injected. Default container profiles active.</span>'}
+      <span class="status-badge ${status === 'ONLINE' ? 'badge-running' : status === 'STARTING' ? 'badge-building' : 'badge-error'}">
+        <span class="pulse-dot"></span>
+        <span>${status === 'ONLINE' ? (isHttp ? `ONLINE (WEB SERVER PORT ${activePort})` : `ONLINE (CLI EXECUTABLE)`) : status}</span>
+      </span>
     </div>
   </div>
 
-  <div class="footer">
-    &copy; 2026 Project Vault v2 Sandboxed Container Runner • Isolated runtime environment active
+  <div class="spec-grid">
+    <div class="spec-card">
+      <div class="spec-label">Uploaded File</div>
+      <div class="spec-val" style="color: #38bdf8;">${binaryOrArchive}</div>
+    </div>
+    <div class="spec-card">
+      <div class="spec-label">Install Command</div>
+      <div class="spec-val">${installCmd}</div>
+    </div>
+    <div class="spec-card">
+      <div class="spec-label">Run Command</div>
+      <div class="spec-val" style="color: #34d399;">${runCmd}</div>
+    </div>
+    <div class="spec-card">
+      <div class="spec-label">Process State</div>
+      <div class="spec-val">${pid} • ${exitCode}</div>
+    </div>
+  </div>
+
+  <div class="terminal-container">
+    <div class="terminal-header">
+      <div class="terminal-dots">
+        <span class="terminal-dot dot-red"></span>
+        <span class="terminal-dot dot-yellow"></span>
+        <span class="terminal-dot dot-green"></span>
+      </div>
+      <div>LIVE EXECUTION CONSOLE & DIAGNOSTICS</div>
+      <div>PORT: ${sandbox.port}</div>
+    </div>
+    <div id="terminal-body" class="terminal-body">${safeLogs}
+<span class="terminal-cursor"></span></div>
+  </div>
+
+  <div class="actions-footer">
+    <div>Live stdout and stderr streaming directly from backend sandbox process.</div>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn" onclick="copyLogs()">Copy Terminal Logs</button>
+      <button class="btn" onclick="window.location.reload()">Reload Viewport</button>
+    </div>
   </div>
 
   <script>
-    async function testHealth() {
-      const out = document.getElementById('output');
-      out.textContent = '// Requesting GET /api/health...';
+    const term = document.getElementById('terminal-body');
+    if (term) term.scrollTop = term.scrollHeight;
+
+    function copyLogs() {
+      navigator.clipboard.writeText(term.innerText);
+      alert('Terminal logs copied to clipboard.');
+    }
+
+    // Auto-refresh polling to detect when the project starts listening on a web server port
+    let pollInterval = setInterval(async () => {
       try {
-        const res = await fetch('/api/health');
-        const data = await res.json();
-        out.textContent = JSON.stringify(data, null, 2);
-      } catch (err) {
-        out.textContent = '// Error: ' + err.message;
-      }
-    }
-
-    async function testEnv() {
-      const out = document.getElementById('output');
-      out.textContent = '// Requesting GET /api/env...';
-      try {
-        const res = await fetch('/api/env');
-        const data = await res.json();
-        out.textContent = JSON.stringify(data, null, 2);
-      } catch (err) {
-        out.textContent = '// Error: ' + err.message;
-      }
-    }
-
-    async function testInfo() {
-      const out = document.getElementById('output');
-      out.textContent = '// Requesting GET /api/info...';
-      try {
-        const res = await fetch('/api/info');
-        const data = await res.json();
-        out.textContent = JSON.stringify(data, null, 2);
-      } catch (err) {
-        out.textContent = '// Error: ' + err.message;
-      }
-    }
-
-    function testMetrics() {
-      const out = document.getElementById('output');
-      const now = new Date().toISOString();
-      out.textContent = JSON.stringify({
-        timestamp: now,
-        container_port: ${port},
-        status: "ONLINE",
-        cpu_usage_pct: (Math.random() * 4 + 1.2).toFixed(2) + "%",
-        memory_usage_mb: (Math.random() * 15 + 115).toFixed(1) + "MB / ${memoryLimit}",
-        active_network_sockets: 1,
-        http_requests_served: 4,
-        health_status: "HEALTHY",
-        isolation: "LOCKED_DOWN"
-      }, null, 2);
-    }
-
-    function clearOutput() {
-      document.getElementById('output').textContent = '// Console cleared.';
-    }
+        const res = await fetch('/api/sandbox-internal-status');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.isHttpServer && data.activeAppPort) {
+            clearInterval(pollInterval);
+            window.location.reload();
+          }
+        }
+      } catch (e) {}
+    }, 1500);
   </script>
 </body>
 </html>`;
 }
 
 /**
- * Start an actual local HTTP listener for the sandbox on the assigned port
+ * Start the Gateway HTTP Server on the assigned public port:
+ * - If the project web application is listening on activeAppPort: reverse-proxies requests, stripping iframe security headers
+ * - If the project is a CLI binary, compiling, or not serving HTTP: renders live diagnostic terminal view
  */
-function startSandboxHttpServer(project, port, envArray, runtimeInfo) {
+function startSandboxGatewayServer(sandboxRecord) {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
-      // Allow embedding in iframes
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
       if (req.method === 'OPTIONS') {
         res.writeHead(204);
         return res.end();
       }
 
-      const url = req.url || '/';
-
-      if (url === '/api/health') {
+      // Internal status check endpoint for auto-refresh polling
+      if (req.url === '/api/sandbox-internal-status') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         return res.end(JSON.stringify({
-          status: 'HEALTHY',
-          code: 200,
-          container: `pv-sandbox-${port}`,
-          runtime: runtimeInfo.runtime,
-          port,
-          project: project.title,
-          timestamp: new Date().toISOString(),
-          uptime: process.uptime(),
-          memory: { used: '118MB', limit: process.env.DOCKER_SANDBOX_MEMORY_LIMIT || '512m' },
+          isHttpServer: sandboxRecord.isHttpServer,
+          activeAppPort: sandboxRecord.activeAppPort,
+          status: sandboxRecord.status,
+          childPid: sandboxRecord.childPid,
+          exitCode: sandboxRecord.exitCode,
+          logsCount: sandboxRecord.logs.length,
         }));
       }
 
-      if (url === '/api/env') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({
-          injected_count: envArray.length,
-          environment_variables: envArray,
-          runtime_stack: runtimeInfo.runtime,
-        }));
+      // If the target web server is active, reverse-proxy request to it
+      if (sandboxRecord.isHttpServer && sandboxRecord.activeAppPort) {
+        const targetOptions = {
+          hostname: '127.0.0.1',
+          port: sandboxRecord.activeAppPort,
+          path: req.url,
+          method: req.method,
+          headers: {
+            ...req.headers,
+            host: `127.0.0.1:${sandboxRecord.activeAppPort}`,
+          },
+          timeout: 6000,
+        };
+
+        const proxyReq = http.request(targetOptions, (proxyRes) => {
+          const proxyHeaders = { ...proxyRes.headers };
+          // Strip frame-blocking headers so iframe preview renders without errors
+          delete proxyHeaders['x-frame-options'];
+          delete proxyHeaders['content-security-policy'];
+          delete proxyHeaders['frame-options'];
+
+          res.writeHead(proxyRes.statusCode, proxyHeaders);
+          proxyRes.pipe(res, { end: true });
+        });
+
+        proxyReq.on('error', (err) => {
+          // If the target port failed momentarily, show diagnostic terminal
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(renderDiagnosticTerminalHtml(sandboxRecord));
+        });
+
+        return req.pipe(proxyReq, { end: true });
       }
 
-      if (url === '/api/info') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({
-          title: project.title,
-          tagline: project.tagline || '',
-          category: project.category || '',
-          majorStack: project.majorStack || '',
-          runCommand: project.runCommand || runtimeInfo.runCommand,
-          installCmd: project.installCmd || runtimeInfo.installCmd,
-          liveUrl: project.liveUrl || null,
-          githubUrl: project.githubUrl || null,
-        }));
-      }
-
-      // Default: Serve live interactive web application inside container viewport
+      // Otherwise, serve the Live Executable Terminal and Diagnostics Viewport
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(generateSandboxHtml(project, port, envArray, runtimeInfo));
+      res.end(renderDiagnosticTerminalHtml(sandboxRecord));
     });
 
     server.on('error', (err) => {
-      console.warn(`[Sandbox HTTP Server Error on port ${port}]:`, err.message);
       reject(err);
     });
 
-    server.listen(port, '0.0.0.0', () => {
-      console.log(`📡 [Sandbox HTTP Server] Live server listening on http://localhost:${port}`);
+    server.listen(sandboxRecord.port, '0.0.0.0', () => {
       resolve(server);
     });
   });
 }
 
 /**
- * Start or Restart a Docker Sandbox container for a given project
+ * Start or Restart a Sandbox container/isolated runtime for a project
  *
- * @param {Object} project - Project document from MongoDB
- * @param {Array} customEnvVars - Optional array of { key, value } environment variables
- * @returns {Promise<Object>} Sandbox status and details
+ * @param {Object} project - MongoDB Project document
+ * @param {Array} customEnvVars - Optional custom environment variable overrides
+ * @returns {Promise<Object>} Sandbox status and diagnostic details
  */
 export async function startSandbox(project, customEnvVars = []) {
   const projectId = project._id.toString();
@@ -366,14 +534,13 @@ export async function startSandbox(project, customEnvVars = []) {
     await stopSandbox(projectId);
   }
 
-  const port = await findAvailablePort();
-  const runtimeInfo = detectRuntimeStack(project);
-  const containerName = `pv-sandbox-${projectId.slice(-6)}-${Date.now()}`;
+  const gatewayPort = await findAvailablePort(3001, 3100);
+  const targetPort = await findAvailablePort(gatewayPort + 10, 3200);
   const baseUrl = process.env.DOCKER_SANDBOX_BASE_URL || 'http://localhost';
-  const liveUrl = `${baseUrl}:${port}`;
+  const liveUrl = `${baseUrl}:${gatewayPort}`;
   const maxLifespanMs = Number(process.env.DOCKER_SANDBOX_MAX_LIFESPAN_MS) || 600000; // 10 minutes
 
-  // Merge project env variables with passed custom env variables
+  // Merge environment variables
   const mergedEnvMap = new Map();
   if (Array.isArray(project.envVariables)) {
     project.envVariables.forEach(v => {
@@ -386,98 +553,253 @@ export async function startSandbox(project, customEnvVars = []) {
     });
   }
 
+  // Force port configuration to target port
+  mergedEnvMap.set('PORT', String(targetPort));
+  mergedEnvMap.set('HOST', '0.0.0.0');
+
   const envArray = Array.from(mergedEnvMap.entries()).map(([k, v]) => ({ key: k, value: v }));
   const dockerLive = await isDockerAvailable();
 
   const now = new Date();
   const initialLogs = [
-    `[${now.toISOString()}] [Docker Engine] Initializing container runtime for "${project.title}"...`,
-    `[${now.toISOString()}] [Runtime Target] Detected runtime: ${runtimeInfo.runtime.toUpperCase()} (${runtimeInfo.defaultImage})`,
-    `[${now.toISOString()}] [Resource Locks] Memory quota: ${process.env.DOCKER_SANDBOX_MEMORY_LIMIT || '512m'} | CPU limit: ${process.env.DOCKER_SANDBOX_CPU_LIMIT || '1.0'} | PIDs limit: ${process.env.DOCKER_SANDBOX_PIDS_LIMIT || '100'}`,
-    `[${now.toISOString()}] [Network Bridge] Allocated host port ${port} -> Container port ${runtimeInfo.defaultPort}`,
-    `[${now.toISOString()}] [Environment Engine] Injected ${envArray.length} environment variables from configuration`,
+    `[${now.toISOString()}] [Sandbox Initializer] Starting execution runtime for "${project.title}"...`,
+    `[${now.toISOString()}] [Isolation Engine] Mode: ${dockerLive ? 'DOCKER_CONTAINER' : 'PROCESS_SANDBOX_ISOLATION'}`,
+    `[${now.toISOString()}] [Network Bridge] Gateway Port: ${gatewayPort} -> Application Port: ${targetPort}`,
+    `[${now.toISOString()}] [Environment] Injected ${envArray.length} environment variables into runtime`,
   ];
 
   const sandboxRecord = {
     projectId,
     projectTitle: project.title,
-    containerName,
-    port,
+    uploadedFileName: project.executableFile?.name || null,
+    port: gatewayPort,
+    targetPort,
     liveUrl,
-    mode: dockerLive ? 'DOCKER_DAEMON' : 'CONTAINER_SANDBOX_VIRTUAL',
+    mode: dockerLive ? 'DOCKER_CONTAINER' : 'PROCESS_SANDBOX_ISOLATION',
     status: 'STARTING',
-    runtime: runtimeInfo.runtime,
-    image: runtimeInfo.defaultImage,
     startedAt: now,
     logs: [...initialLogs],
     httpServer: null,
+    childProcess: null,
+    childPid: null,
+    exitCode: null,
+    isHttpServer: false,
+    activeAppPort: null,
     stopTimer: null,
+    installCmd: '',
+    runCommand: '',
   };
 
   activeSandboxes.set(projectId, sandboxRecord);
 
-  // Set automatic shutdown timer to avoid orphaned background containers
+  // Auto-termination timer
   sandboxRecord.stopTimer = setTimeout(async () => {
-    console.log(`⏱️ [Docker Sandbox] Auto-terminating inactive container for project ${projectId} (Lifespan reached).`);
+    console.log(`⏱️ [Docker Sandbox] Auto-terminating inactive container for project ${projectId}.`);
     await stopSandbox(projectId);
   }, maxLifespanMs);
 
-  // Always spawn a real HTTP listener on port so the browser iframe can immediately load http://localhost:${port}
+  // Step 1: Start Gateway HTTP Server immediately so preview viewport can connect
   try {
-    const server = await startSandboxHttpServer(project, port, envArray, runtimeInfo);
+    const server = await startSandboxGatewayServer(sandboxRecord);
     sandboxRecord.httpServer = server;
   } catch (err) {
-    console.warn(`[Sandbox Server Binding Notice]:`, err.message);
+    console.warn(`[Sandbox Gateway Binding Warning on port ${gatewayPort}]:`, err.message);
   }
 
+  // Step 2: Resolve uploaded executable / archive file
+  const executablePath = resolveExecutablePath(project);
+  if (!executablePath) {
+    const errorMsg = `[Sandbox Diagnostic Warning] No uploaded executable (.exe) or archive (.zip) was found on disk for this project.`;
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] ${errorMsg}`);
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] Staged path check failed. Please ensure an executable or source zip is uploaded.`);
+    sandboxRecord.status = 'ONLINE';
+    return formatSandboxResponse(sandboxRecord);
+  }
+
+  sandboxRecord.uploadedFileName = path.basename(executablePath);
+  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Artifact Resolved] Uploaded file: ${sandboxRecord.uploadedFileName}`);
+
+  // Step 3: Extract or stage in isolated workspace
+  let workspace;
+  try {
+    workspace = prepareProjectWorkspace(projectId, executablePath);
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Workspace Prepared] Staged at: ${workspace.appRoot}`);
+  } catch (err) {
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Extraction Error] ${err.message}`);
+    sandboxRecord.status = 'ERROR';
+    return formatSandboxResponse(sandboxRecord);
+  }
+
+  // Step 4: Extract execution commands strictly from project details
+  const { installCmd, runCommand } = extractProjectCommands(project, workspace);
+  sandboxRecord.installCmd = installCmd;
+  sandboxRecord.runCommand = runCommand;
+
+  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Project Details] Install Command: ${installCmd || '(None specified)'}`);
+  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Project Details] Run Command: ${runCommand || '(None specified)'}`);
+
+  if (!runCommand) {
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Diagnostic Error] No run command could be identified for this project.`);
+    sandboxRecord.status = 'ERROR';
+    return formatSandboxResponse(sandboxRecord);
+  }
+
+  // Step 5: Execute application
+  // If Docker CLI is available, run containerized
   if (dockerLive) {
     try {
-      const envFlags = envArray.map(e => `-e "${e.key}=${e.value.replace(/"/g, '\\"')}"`).join(' ');
-      const memoryLimit = process.env.DOCKER_SANDBOX_MEMORY_LIMIT || '512m';
-      const cpuLimit = process.env.DOCKER_SANDBOX_CPU_LIMIT || '1.0';
-      const pidsLimit = process.env.DOCKER_SANDBOX_PIDS_LIMIT || '100';
+      const containerName = `pv-box-${projectId.slice(-6)}-${Date.now()}`;
+      sandboxRecord.containerName = containerName;
+      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Docker CLI] Launching container ${containerName}...`);
 
-      const runCommandString = runtimeInfo.runCommand;
-      const dockerRunCmd = `docker run -d --name ${containerName} -p ${port}:${runtimeInfo.defaultPort} --memory=${memoryLimit} --cpus=${cpuLimit} --pids-limit=${pidsLimit} ${envFlags} ${runtimeInfo.defaultImage} sh -c "${runCommandString.replace(/"/g, '\\"')}"`;
+      const envFlags = envArray.map(e => `-e "${e.key}=${String(e.value).replace(/"/g, '\\"')}"`).join(' ');
+      const dockerRunCmd = `docker run -d --name ${containerName} -p ${targetPort}:${targetPort} -v "${workspace.appRoot}:/app" -w /app ${envFlags} node:18-alpine sh -c "${runCommand.replace(/"/g, '\\"')}"`;
 
-      console.log(`🐳 [Docker CLI] Launching container: ${containerName}`);
       const { stdout } = await execAsync(dockerRunCmd, { timeout: 30000 });
-      const containerId = stdout.trim();
-
-      sandboxRecord.containerId = containerId;
+      sandboxRecord.containerId = stdout.trim();
       sandboxRecord.status = 'ONLINE';
-      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Container Started] ID: ${containerId.slice(0, 12)} online on ${liveUrl}`);
-      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Healthcheck] Container daemon reporting healthy (HTTP 200)`);
+      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Docker Started] Container ID: ${sandboxRecord.containerId.slice(0, 12)}`);
+
+      // Monitor container port
+      setTimeout(async () => {
+        const responsive = await probeHttpPort(targetPort);
+        if (responsive) {
+          sandboxRecord.isHttpServer = true;
+          sandboxRecord.activeAppPort = targetPort;
+          sandboxRecord.logs.push(`[${new Date().toISOString()}] [Healthcheck] Container web server verified active on port ${targetPort}!`);
+        }
+      }, 3000);
 
       return formatSandboxResponse(sandboxRecord);
-    } catch (err) {
-      console.warn(`⚠️ [Docker CLI Error] Failed to launch real container, gracefully using Virtual Sandbox isolation:`, err.message);
-      sandboxRecord.mode = 'CONTAINER_SANDBOX_VIRTUAL';
-      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Docker Notice] Daemon fallback activated. Sandbox switching to Virtual Isolation Mode.`);
+    } catch (dockerErr) {
+      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Docker Notice] Container spawn failed (${dockerErr.message}). Switching to isolated process sandbox.`);
+      sandboxRecord.mode = 'PROCESS_SANDBOX_ISOLATION';
     }
   }
 
-  // Virtual Sandbox Execution Flow (Guaranteed zero-crash fallback)
+  // Process Sandbox Isolation Execution Flow
+  (async () => {
+    // 5A: Execute dependency installation command if present
+    if (installCmd) {
+      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Dependency Resolver] Executing: ${installCmd}...`);
+      try {
+        await new Promise((resolve) => {
+          const installChild = exec(installCmd, {
+            cwd: workspace.appRoot,
+            env: { ...process.env, ...Object.fromEntries(mergedEnvMap) },
+            timeout: 120000,
+          });
+
+          installChild.stdout?.on('data', (d) => {
+            const lines = d.toString().split('\n').filter(Boolean);
+            lines.forEach(l => sandboxRecord.logs.push(`[npm] ${l.trim()}`));
+          });
+
+          installChild.stderr?.on('data', (d) => {
+            const lines = d.toString().split('\n').filter(Boolean);
+            lines.forEach(l => sandboxRecord.logs.push(`[npm warn] ${l.trim()}`));
+          });
+
+          installChild.on('close', (code) => {
+            sandboxRecord.logs.push(`[${new Date().toISOString()}] [Dependency Resolver] Finished (Exit Code: ${code})`);
+            resolve();
+          });
+        });
+      } catch (err) {
+        sandboxRecord.logs.push(`[${new Date().toISOString()}] [Dependency Resolver Warning] ${err.message}`);
+      }
+    }
+
+    // 5B: Execute project run command / executable
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Application Launch] Executing: "${runCommand}" in ${workspace.appRoot}`);
+
+    const spawnEnv = {
+      ...process.env,
+      ...Object.fromEntries(mergedEnvMap),
+      PORT: String(targetPort),
+    };
+
+    const child = spawn(runCommand, {
+      cwd: workspace.appRoot,
+      env: spawnEnv,
+      shell: true,
+      windowsHide: true,
+    });
+
+    sandboxRecord.childProcess = child;
+    sandboxRecord.childPid = child.pid;
+    sandboxRecord.status = 'ONLINE';
+    sandboxRecord.logs.push(`[${new Date().toISOString()}] [Process Spawned] PID: ${child.pid}`);
+
+    child.stdout?.on('data', (data) => {
+      const text = data.toString();
+      const lines = text.split('\n').filter(Boolean);
+      lines.forEach((l) => {
+        sandboxRecord.logs.push(`[stdout] ${l.trimEnd()}`);
+      });
+
+      // Check if stdout contains an explicit port announcement
+      const portMatch = text.match(/(?:localhost|127\.0\.0\.1|port)\s*[:=]?\s*(\d{4,5})/i);
+      if (portMatch && !sandboxRecord.isHttpServer) {
+        const detectedPort = Number(portMatch[1]);
+        if (detectedPort > 1024 && detectedPort < 65535) {
+          sandboxRecord.activeAppPort = detectedPort;
+          sandboxRecord.isHttpServer = true;
+          sandboxRecord.logs.push(`[${new Date().toISOString()}] [Auto-Discovery] Detected application listening on port ${detectedPort}!`);
+        }
+      }
+    });
+
+    child.stderr?.on('data', (data) => {
+      const lines = data.toString().split('\n').filter(Boolean);
+      lines.forEach((l) => {
+        sandboxRecord.logs.push(`[stderr] ${l.trimEnd()}`);
+      });
+    });
+
+    child.on('error', (err) => {
+      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Diagnostic Error] Process failed to execute: ${err.message}`);
+      sandboxRecord.status = 'ERROR';
+    });
+
+    child.on('exit', (code, signal) => {
+      sandboxRecord.exitCode = code;
+      sandboxRecord.logs.push(`[${new Date().toISOString()}] [Process Exited] Exit code: ${code}, signal: ${signal || 'none'}`);
+      if (code !== 0 && code !== null) {
+        sandboxRecord.logs.push(`[${new Date().toISOString()}] [Diagnostic Notice] Executable returned non-zero exit code ${code}. Check stderr logs above.`);
+      }
+    });
+
+    // Probe the assigned target port for web server availability
+    let attempts = 0;
+    const probeInterval = setInterval(async () => {
+      attempts++;
+      if (sandboxRecord.isHttpServer || attempts > 15 || sandboxRecord.exitCode !== null) {
+        clearInterval(probeInterval);
+        return;
+      }
+
+      const isUp = await probeHttpPort(targetPort);
+      if (isUp) {
+        clearInterval(probeInterval);
+        sandboxRecord.isHttpServer = true;
+        sandboxRecord.activeAppPort = targetPort;
+        sandboxRecord.logs.push(`[${new Date().toISOString()}] [Diagnostic Healthcheck] Web server responsive on http://127.0.0.1:${targetPort}!`);
+      }
+    }, 1000);
+  })();
+
   sandboxRecord.status = 'ONLINE';
-  const installCmd = runtimeInfo.installCmd;
-  const runCmd = runtimeInfo.runCommand;
-
-  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Virtual Sandbox] Container filesystem mounted at /sandbox/app`);
-  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Dependency Resolver] Executing: ${installCmd}`);
-  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Runtime Daemon] Running command: ${runCmd}`);
-  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Service Listener] Listening on 0.0.0.0:${port} (${liveUrl})`);
-  sandboxRecord.logs.push(`[${new Date().toISOString()}] [Status] Online and serving live demo viewport`);
-
   return formatSandboxResponse(sandboxRecord);
 }
 
 /**
- * Stop and remove a sandbox container
+ * Stop and remove a sandbox container / child process
  */
 export async function stopSandbox(projectId) {
   const sandbox = activeSandboxes.get(projectId);
   if (!sandbox) {
-    return { success: true, status: 'OFFLINE', message: 'Container is already stopped' };
+    return { success: true, status: 'OFFLINE', message: 'Sandbox is already stopped' };
   }
 
   if (sandbox.stopTimer) {
@@ -485,27 +807,30 @@ export async function stopSandbox(projectId) {
     sandbox.stopTimer = null;
   }
 
-  // Close live HTTP listener on port
+  // Terminate child process tree
+  if (sandbox.childPid) {
+    terminateProcessTree(sandbox.childPid);
+    sandbox.childProcess = null;
+    sandbox.childPid = null;
+  }
+
+  // Close Gateway HTTP server
   if (sandbox.httpServer) {
     try {
       sandbox.httpServer.close();
-      console.log(`🔌 [Sandbox HTTP Server] Closed listener on port ${sandbox.port}`);
     } catch (e) {}
     sandbox.httpServer = null;
   }
 
-  // If real Docker container was running, stop and remove it
-  if (sandbox.mode === 'DOCKER_DAEMON' && sandbox.containerName) {
+  // If Docker container was running, stop and remove it
+  if (sandbox.containerName) {
     try {
       await execAsync(`docker rm -f ${sandbox.containerName}`, { timeout: 10000 });
-      console.log(`🛑 [Docker Sandbox] Removed container ${sandbox.containerName}`);
-    } catch (e) {
-      console.warn(`[Docker Sandbox Cleanup] Notice:`, e.message);
-    }
+    } catch (e) {}
   }
 
   sandbox.status = 'OFFLINE';
-  sandbox.logs.push(`[${new Date().toISOString()}] [Container Stopped] Container shut down and ports released.`);
+  sandbox.logs.push(`[${new Date().toISOString()}] [Sandbox Terminated] Sandbox process stopped and ports released.`);
   activeSandboxes.delete(projectId);
 
   return {
@@ -550,22 +875,6 @@ export async function getSandboxLogs(projectId) {
     };
   }
 
-  // If real Docker container is active, query latest live logs from Docker daemon
-  if (sandbox.mode === 'DOCKER_DAEMON' && sandbox.containerName) {
-    try {
-      const { stdout } = await execAsync(`docker logs --tail 100 ${sandbox.containerName}`, { timeout: 5000 });
-      if (stdout) {
-        const liveLines = stdout.split('\n').filter(Boolean);
-        return {
-          success: true,
-          projectId,
-          status: sandbox.status,
-          logs: [...sandbox.logs, ...liveLines],
-        };
-      }
-    } catch (e) {}
-  }
-
   return {
     success: true,
     projectId,
@@ -578,13 +887,11 @@ export async function getSandboxLogs(projectId) {
  * Stop all running sandbox containers during server shutdown
  */
 export async function stopAllSandboxes() {
-  console.log(`🧹 [Docker Sandbox] Stopping all ${activeSandboxes.size} active sandbox containers...`);
   const promises = [];
   for (const projectId of activeSandboxes.keys()) {
     promises.push(stopSandbox(projectId));
   }
   await Promise.allSettled(promises);
-  console.log('✅ [Docker Sandbox] All sandbox containers cleaned up cleanly.');
 }
 
 /**
@@ -600,9 +907,9 @@ function formatSandboxResponse(sandbox) {
     port: sandbox.port,
     liveUrl: sandbox.liveUrl,
     mode: sandbox.mode,
-    runtime: sandbox.runtime,
-    image: sandbox.image,
-    containerName: sandbox.containerName,
+    uploadedFileName: sandbox.uploadedFileName,
+    installCmd: sandbox.installCmd,
+    runCommand: sandbox.runCommand,
     uptimeSeconds,
     startedAt: sandbox.startedAt,
     logs: sandbox.logs,

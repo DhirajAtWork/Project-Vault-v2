@@ -31,10 +31,12 @@ import {
   CheckCheck,
   Binary,
   FileDown,
-  Clock
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { getProjectByIdApi, evaluateProjectAiApi } from '../../api/projectApi';
 import { getCurrentUserApi } from '../../api/authApi';
+import { getScoreStyles } from '../../utils/scoreColors';
 
 const DashboardViewProject = () => {
   const { id } = useParams();
@@ -324,6 +326,13 @@ const DashboardViewProject = () => {
 
   const runScript = generateRunScript();
 
+  // Dynamic score-based theme computation
+  const activeScore = (healthReport?.score !== undefined && healthReport?.score !== null)
+    ? healthReport.score
+    : ((healthScore !== null && healthScore !== undefined) ? healthScore : project?.score);
+  const activeGrade = healthReport?.grade || aiGrade || project?.grade || null;
+  const scoreStyles = getScoreStyles(activeScore, activeGrade);
+
   return (
     <div className="min-h-screen bg-[#f7f7f2] bg-grid-pattern text-slate-900 font-sans antialiased selection:bg-emerald-100 selection:text-emerald-900 pb-24">
       
@@ -421,9 +430,9 @@ const DashboardViewProject = () => {
               {/* AI Generated Grade Badge */}
               <div className="absolute top-4 right-4">
                 {aiGrade || project.grade ? (
-                  <span className="bg-emerald-500 text-slate-950 border border-emerald-300 text-xs font-black px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-fadeIn">
-                    <Sparkles className="w-3.5 h-3.5 text-slate-950" />
-                    <ShieldCheck className="w-4 h-4 text-slate-950" />
+                  <span className={`${scoreStyles.pill} text-xs font-black px-4 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-fadeIn`}>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <ShieldCheck className="w-4 h-4" />
                     <span>{aiGrade || project.grade} ({(healthScore !== null && healthScore !== undefined) ? healthScore : project.score}/100)</span>
                   </span>
                 ) : (
@@ -522,12 +531,12 @@ const DashboardViewProject = () => {
 
               <div className="bg-stone-50 border border-stone-200/70 p-4 rounded-2xl space-y-1 sm:col-span-2 md:col-span-1">
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
-                  <Activity className="w-3.5 h-3.5 text-emerald-600" />
+                  <Activity className={`w-3.5 h-3.5 ${scoreStyles.icon}`} />
                   <span>AI Health Score</span>
                 </span>
                 {aiGrade ? (
-                  <p className="text-xs font-bold text-emerald-700 font-mono flex items-center gap-1.5 animate-fadeIn">
-                    <Sparkles className="w-3 h-3 text-emerald-600" />
+                  <p className={`text-xs font-bold ${scoreStyles.text} font-mono flex items-center gap-1.5 animate-fadeIn`}>
+                    <Sparkles className={`w-3 h-3 ${scoreStyles.icon}`} />
                     <span>{(healthScore !== null && healthScore !== undefined) ? healthScore : project.score} / 100 • {aiGrade}</span>
                   </p>
                 ) : (
@@ -648,14 +657,19 @@ const DashboardViewProject = () => {
               { name: 'Environment Secrets', status: aiGrade ? 'Validated' : 'Pending', detail: 'Required variables & port mappings' },
               { name: 'Executable Build Package', status: (project.executableFile?.url ? 'Attached' : 'Neutral'), detail: project.executableFile?.url ? 'Binary mounted & tested' : 'Source-only repo' },
             ]).map((check, idx) => {
-              const isPassed = check.status === 'Passed' || check.status === 'Validated' || check.status === 'Attached';
-              const isPending = check.status === 'Pending';
+              const statusStr = String(check.status || '').toLowerCase();
+              const isPassed = statusStr === 'passed' || statusStr === 'validated' || statusStr === 'attached' || statusStr === 'success';
+              const isPending = statusStr === 'pending';
+              const isFailed = statusStr === 'failed' || statusStr === 'error' || statusStr === 'incomplete' || statusStr === 'partial' || statusStr === 'warning';
+
               return (
                 <div key={idx} className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">{check.name || check.title}</span>
                     {isPassed ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    ) : isFailed ? (
+                      <AlertTriangle className="w-4 h-4 text-rose-500" />
                     ) : isPending ? (
                       <Clock className="w-4 h-4 text-amber-500" />
                     ) : (
@@ -663,7 +677,7 @@ const DashboardViewProject = () => {
                     )}
                   </div>
                   <div className="text-sm font-extrabold text-slate-900 flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${isPassed ? 'bg-emerald-500' : isPending ? 'bg-amber-400' : 'bg-slate-400'}`} />
+                    <span className={`w-2 h-2 rounded-full ${isPassed ? 'bg-emerald-500' : isFailed ? 'bg-rose-500' : isPending ? 'bg-amber-400' : 'bg-slate-400'}`} />
                     <span>{check.status}</span>
                   </div>
                   <p className="text-[11px] text-slate-500 leading-snug">{check.detail}</p>
@@ -673,16 +687,16 @@ const DashboardViewProject = () => {
           </div>
 
           {healthReport && (
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200/80 space-y-2 animate-fadeIn">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold text-emerald-900">
+            <div className={`p-4 rounded-2xl ${scoreStyles.banner} border space-y-2 animate-fadeIn`}>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-bold">
                 <span className="flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4 text-emerald-600" />
+                  <Sparkles className={`w-4 h-4 ${scoreStyles.bannerIcon}`} />
                   <span>AI Audit Complete: Generated {healthReport.grade || aiGrade || project.grade || 'Grade A+'} ({healthReport.score || healthScore}/100)</span>
                 </span>
-                <span className="font-mono text-emerald-700 text-[11px]">Evaluated at {healthReport.timestamp}</span>
+                <span className={`font-mono ${scoreStyles.bannerTime} text-[11px]`}>Evaluated at {healthReport.timestamp}</span>
               </div>
               {healthReport.summary && (
-                <p className="text-xs text-emerald-800/90 font-normal leading-relaxed">
+                <p className={`text-xs ${scoreStyles.bannerSummary} font-normal leading-relaxed`}>
                   {healthReport.summary}
                 </p>
               )}

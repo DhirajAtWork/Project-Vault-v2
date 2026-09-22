@@ -20,6 +20,7 @@ import {
   Binary
 } from 'lucide-react';
 import { getMyProjectsApi, deleteProjectApi } from '../../api/projectApi';
+import { getScoreStyles } from '../../utils/scoreColors';
 
 const DashboardProjects = () => {
   const { user } = useOutletContext() || {};
@@ -166,9 +167,9 @@ const DashboardProjects = () => {
 
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {project.grade && project.score !== null ? (
-                      <span className="bg-[#9333ea] text-white text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
-                        <Sparkles className="w-3.5 h-3.5 text-white" />
-                        <span>Grade Grade {project.grade} ({project.score}/100)</span>
+                      <span className={`${getScoreStyles(project.score, project.grade).badge} text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md`}>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>{project.grade.startsWith('Grade') ? project.grade : `Grade ${project.grade}`} ({project.score}/100)</span>
                       </span>
                     ) : (
                       <span className="bg-amber-400 text-slate-950 text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">

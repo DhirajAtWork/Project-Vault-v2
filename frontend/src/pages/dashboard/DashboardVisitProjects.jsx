@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { getAllProjectsApi } from '../../api/projectApi';
 import { sendCollaborationRequestApi, getRecruiterAnalyticsApi } from '../../api/analyticsApi';
+import { getScoreStyles } from '../../utils/scoreColors';
 
 /**
  * Recruiter Visit Projects Catalog
@@ -228,9 +229,9 @@ const DashboardVisitProjects = () => {
                     )}
 
                     {project.grade && project.score !== null ? (
-                      <span className="bg-[#9333ea] text-white text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">
-                        <Sparkles className="w-3.5 h-3.5 text-white" />
-                        <span>Grade Grade {project.grade} ({project.score}/100)</span>
+                      <span className={`${getScoreStyles(project.score, project.grade).badge} text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md`}>
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>{project.grade.startsWith('Grade') ? project.grade : `Grade ${project.grade}`} ({project.score}/100)</span>
                       </span>
                     ) : (
                       <span className="bg-amber-400 text-slate-950 text-[11px] sm:text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1 shadow-md">

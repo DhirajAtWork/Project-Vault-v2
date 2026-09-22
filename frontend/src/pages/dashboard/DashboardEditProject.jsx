@@ -256,6 +256,49 @@ const EXECUTION_PRESETS = [
       { key: 'BUILD_TYPE', value: 'Debug' }
     ],
     envNotes: 'Requires GCC/Clang and CMake.'
+  },
+  {
+    name: 'Java (Spring Boot)',
+    install: './mvnw clean install',
+    run: './mvnw spring-boot:run',
+    test: './mvnw test',
+    envVars: [
+      { key: 'SPRING_PROFILES_ACTIVE', value: 'dev' },
+      { key: 'SERVER_PORT', value: '8080' },
+      { key: 'DATABASE_URL', value: 'jdbc:postgresql://localhost:5432/springdb' }
+    ],
+    envNotes: 'Requires JDK 17+ and Maven.'
+  },
+  {
+    name: 'Flutter / Mobile',
+    install: 'flutter pub get',
+    run: 'flutter run',
+    test: 'flutter test',
+    envVars: [
+      { key: 'API_BASE_URL', value: 'https://api.projectvault.dev' }
+    ],
+    envNotes: 'Connect physical device or start iOS/Android simulator.'
+  },
+  {
+    name: 'PHP / Laravel',
+    install: 'composer install',
+    run: 'php artisan serve --port=8000',
+    test: 'php artisan test',
+    envVars: [
+      { key: 'APP_ENV', value: 'local' },
+      { key: 'APP_KEY', value: 'base64:dev_app_key_secret' }
+    ],
+    envNotes: 'Requires PHP 8.1+ and Composer.'
+  },
+  {
+    name: '.NET / C#',
+    install: 'dotnet restore',
+    run: 'dotnet run',
+    test: 'dotnet test',
+    envVars: [
+      { key: 'ASPNETCORE_ENVIRONMENT', value: 'Development' }
+    ],
+    envNotes: 'Requires .NET SDK 8.0+.'
   }
 ];
 
@@ -1198,71 +1241,74 @@ const DashboardEditProject = () => {
               </button>
             </div>
 
-            {/* Execution Presets */}
+            {/* Preset Quick Fill Bar */}
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-2">
-                Apply Environment & Command Preset:
-              </label>
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+              <span className="block text-xs font-bold text-slate-700 mb-2">
+                Auto-Fill by Framework / Environment Preset:
+              </span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {EXECUTION_PRESETS.map((preset) => (
                   <button
                     key={preset.name}
                     type="button"
                     onClick={() => applyExecutionPreset(preset)}
-                    className="px-3 py-1.5 rounded-xl bg-[#f8fafc] border border-stone-200 hover:border-emerald-600 hover:bg-emerald-50/50 text-slate-700 hover:text-emerald-900 text-xs font-bold whitespace-nowrap transition-all cursor-pointer shadow-2xs"
+                    className="text-left text-xs font-bold p-2.5 rounded-xl border border-stone-200/90 bg-[#fbfbf9] hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-800 transition-all cursor-pointer flex items-center gap-2 group"
                   >
-                    {preset.name}
+                    <Play className="w-3.5 h-3.5 text-emerald-600 group-hover:scale-110 transition-transform shrink-0" />
+                    <span className="truncate">{preset.name}</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Install and Run inputs */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  1. Setup / Install Command
+                  Installation / Setup Command <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
-                  <Terminal className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Terminal className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                   <input
                     type="text"
+                    required
                     value={formData.installCommand}
                     onChange={(e) => setFormData({ ...formData, installCommand: e.target.value })}
-                    placeholder="e.g. npm install"
-                    className="w-full bg-[#f8fafc] border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-emerald-600"
+                    placeholder="e.g. npm install or pip install -r requirements.txt"
+                    className="w-full bg-[#f8fafc] border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm font-mono focus:outline-none focus:border-emerald-600"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  2. Entrypoint / Run Command <span className="text-rose-500">*</span>
+                  Start / Run Command <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
-                  <Play className="w-3.5 h-3.5 text-emerald-600 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Play className="w-4 h-4 text-emerald-600 absolute left-3.5 top-3" />
                   <input
                     type="text"
                     required
                     value={formData.runCommand}
                     onChange={(e) => setFormData({ ...formData, runCommand: e.target.value })}
-                    placeholder="e.g. npm run dev"
-                    className="w-full bg-[#f8fafc] border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-emerald-600"
+                    placeholder="e.g. npm run dev or python main.py or flutter run"
+                    className="w-full bg-[#f8fafc] border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm font-mono focus:outline-none focus:border-emerald-600 font-bold text-slate-900"
                   />
                 </div>
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  3. Test Command (Optional)
+                  Automated Test / Audit Command (Optional)
                 </label>
                 <div className="relative">
-                  <Check className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <Cpu className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                   <input
                     type="text"
                     value={formData.testCommand}
                     onChange={(e) => setFormData({ ...formData, testCommand: e.target.value })}
-                    placeholder="e.g. npm test"
-                    className="w-full bg-[#f8fafc] border border-slate-300 rounded-xl pl-9 pr-3 py-2 text-xs font-mono text-slate-800 focus:outline-none focus:border-emerald-600"
+                    placeholder="e.g. npm test or pytest or cargo test"
+                    className="w-full bg-[#f8fafc] border border-slate-300 rounded-xl pl-10 pr-4 py-2.5 text-xs sm:text-sm font-mono focus:outline-none focus:border-emerald-600"
                   />
                 </div>
               </div>
